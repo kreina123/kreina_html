@@ -1,0 +1,27 @@
+import pdfkit
+
+# Path to the wkhtmltopdf executable
+path_to_wkhtmltopdf = '/usr/local/bin/wkhtmltopdf'  # Update this path based on your system
+config = pdfkit.configuration(wkhtmltopdf=path_to_wkhtmltopdf)
+
+# HTML content or file
+html_file_path = 'your_file.html'  # Change this to the path of your HTML file
+
+# PDF output file
+output_pdf = 'output.pdf'
+
+# Configure options to prevent cutoff
+options = {
+    'page-size': 'A4',  # You can change the page size as needed
+    'margin-top': '0.25in',
+    'margin-right': '0.25in',
+    'margin-bottom': '0.25in',
+    'margin-left': '0.25in',
+    'zoom': '1.0',  # Adjust zoom to scale content properly
+    'encoding': 'UTF-8',
+    'no-outline': None,
+    'disable-smart-shrinking': '',
+}
+
+# Convert HTML to PDF
+pdfkit.from_file(html_file_path, output_pdf, configuration=config, options=options)
