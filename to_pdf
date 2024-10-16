@@ -29,7 +29,15 @@ async def html_to_pdf(input_html, output_pdf):
     # Close the browser
     await browser.close()
 
+# Helper function to run the coroutine in a Jupyter Notebook
+def run_async_task(task):
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        return asyncio.create_task(task)
+    else:
+        return loop.run_until_complete(task)
+
 # Run the conversion
 input_html = 'your_file.html'  # Replace with the path to your HTML file
 output_pdf = 'output.pdf'
-asyncio.run(html_to_pdf(input_html, output_pdf))
+run_async_task(html_to_pdf(input_html, output_pdf))
