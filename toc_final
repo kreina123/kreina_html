@@ -1,5 +1,10 @@
 import re
 
+# overflow styling
+# width: 200px
+# white-space: normal
+# overflow-wrap: break-word
+
 # Input HTML with headers including tab_header_id attributes
 html = '''
 <div class="tab-pane fade" id="tab2" role="tabpanel">
