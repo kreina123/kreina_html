@@ -1,43 +1,78 @@
-import asyncio
-from pyppeteer import launch
+import re
 
-async def html_to_pdf(input_html, output_pdf):
-    # Launch a headless browser
-    browser = await launch()
-    page = await browser.newPage()
+# Input HTML with headers including tab_header_id attributes
+html = '''
+<div class="tab-pane fade" id="tab2" role="tabpanel">
+    <h2 tab_header_id="Test">Header A</h2>
+    <h3>Subheader A1.1</h3>
+    <h3>Subheader A1.2</h3>
+    <h4>Sub-subheader A</h4>
+    <h4>Sub-subheader A</h4>
+    <div class="chart" id="chart4">[Chart 4]</div>
+    <h2>Header B</h2>
+    <h3>Subheader B</h3>
+    <h4>Sub-subheader B</h4>
+    <div class="chart" id="chart5">[Chart 5]</div>
+    <h2>Header C</h2>
+    <h3>Subheader C</h3>
+    <h4>Sub-subheader C</h3>
+    <div class="chart" id="chart6">[Chart 6]</div>
+</div>
+'''
+
+# Generate unique IDs for headers in the HTML content and apply numbering to the headers
+def assign_ids_and_numbers_to_headers(html):
+    numbering = {}
+    header_info = []  # List to store header information
+
+    def add_id_and_number(match):
+        header_tag = match.group(1)  # Get the header tag (e.g., h2, h3, etc.)
+        header_text = match.group(3)  # Get the header text
+        existing_attrs = match.group(2)  # Get existing attributes
+
+        level = int(header_tag[1:])   # Extract the numeric level (e.g., 2 for h2, 3 for h3)
+        
+        # Update numbering for the current level
+        if level not in numbering:
+            numbering[level] = 0
+        # Reset lower-level numbering
+        for l in list(numbering.keys()):
+            if l > level:
+                del numbering[l]
+        
+        numbering[level] += 1  # Increment current level number
+
+        # Create the numbering string
+        number_str = '.'.join(str(numbering[l]) for l in sorted(numbering) if l <= level)
+        
+        # Add number to the header text
+        numbered_header_text = f"{number_str} {header_text}"
+        
+        # Generate header ID by including the numbering
+        header_id = f"{number_str}-{re.sub(r'[^a-zA-Z0-9]+', '-', header_text.strip().lower())}"
+
+        # Check for existing tab_header_id in the existing attributes
+        existing_tab_header_id_match = re.search(r'tab_header_id=[\'"]([^\'"]+)[\'"]', existing_attrs)
+        tab_header_id = existing_tab_header_id_match.group(1) if existing_tab_header_id_match else ''  # Use existing tab_header_id or empty string
+
+        # Store header information
+        header_info.append({
+            'tab_header_id': tab_header_id,  # Capture the tab_header_id or empty string
+            'headerId': header_id,
+            'title': numbered_header_text
+        })
+
+        # Return the modified header with the new id and tab_header_id
+        return f"<{header_tag} id='{header_id}' tab_header_id='{tab_header_id}'>{numbered_header_text}</{header_tag}>"
+
+    # Apply the function to all headers in the HTML content
+    updated_html = re.sub(r'<(h\d+)([^>]*)>(.*?)<\/\1>', add_id_and_number, html)
     
-    # Load the HTML content
-    with open(input_html, 'r') as file:
-        html_content = file.read()
-    await page.setContent(html_content, waitUntil='load')
+    return updated_html, header_info
 
-    # Configure the PDF options to avoid cutoff
-    pdf_options = {
-        'format': 'A4',  # Set the paper size
-        'margin': {
-            'top': '0.25in',
-            'right': '0.25in',
-            'bottom': '0.25in',
-            'left': '0.25in',
-        },
-        'printBackground': True,
-    }
+# Apply numbering and IDs to the headers in the HTML content
+html_content_with_ids_and_numbers, headers_info = assign_ids_and_numbers_to_headers(html)
 
-    # Generate the PDF
-    await page.pdf(path=output_pdf, options=pdf_options)
-
-    # Close the browser
-    await browser.close()
-
-# Helper function to run the coroutine in a Jupyter Notebook
-def run_async_task(task):
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        return asyncio.create_task(task)
-    else:
-        return loop.run_until_complete(task)
-
-# Run the conversion
-input_html = 'your_file.html'  # Replace with the path to your HTML file
-output_pdf = 'output.pdf'
-run_async_task(html_to_pdf(input_html, output_pdf))
+# Output the resulting HTML content
+print("Updated HTML Content with IDs and Numbers:\n", html_content_with_ids_and_numbers)
+print("\nHeader Information:\n", headers_info)  # Displaying the header information with tab_header_id
