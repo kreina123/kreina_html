@@ -81,3 +81,11 @@ html_content_with_ids_and_numbers, headers_info = assign_ids_and_numbers_to_head
 # Output the resulting HTML content
 print("Updated HTML Content with IDs and Numbers:\n", html_content_with_ids_and_numbers)
 print("\nHeader Information:\n", headers_info)  # Displaying the header information with tab_header_id
+
+display(HTML("""
+<style>
+.output_area {
+    zoom: 1.15; /* Scaling factor (1.25 is 125% zoom) */
+}
+</style>
+"""))
