@@ -1,0 +1,203 @@
+# Define the HTML content with a non-wrapping dynamic TOC
+html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabbed Interface with Responsive TOC</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+        }
+
+        .toc {
+            margin-right: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            flex-shrink: 0;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+
+        .toc h3 {
+            display: inline; /* Keep the title in one line */
+            margin: 0;
+        }
+
+        .toc ul {
+            padding: 0;
+            margin: 0;
+            list-style-type: none;
+            display: inline; /* Keep the list inline */
+        }
+
+        .toc a {
+            text-decoration: none;
+            color: #007BFF;
+            padding: 0 10px; /* Add padding between links */
+        }
+
+        .toc a:hover {
+            text-decoration: underline;
+        }
+
+        .tabs {
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+
+        .tab-button {
+            background-color: #f1f1f1;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin-right: 5px;
+            position: relative;
+            display: inline-block;
+        }
+
+        .tab-button:hover {
+            background-color: #ddd;
+        }
+
+        .tab-close {
+            position: absolute;
+            top: 0;
+            right: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            width: 20px;
+            height: 20px;
+            background-color: red;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 16px;
+            line-height: 20px;
+            padding: 0;
+            border: none;
+        }
+
+        .tab-content {
+            border: 1px solid #ccc;
+            padding: 20px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="toc" id="toc">
+        <h3>Table of Contents:</h3>
+        <ul id="toc-list"></ul>
+    </div>
+
+    <div class="tab-content">
+        <div class="tabs" id="tab-buttons">
+            <div class="tab-button" id="tab1-btn">
+                <span onclick="showTab('tab1')">Tab 1</span>
+                <button class="tab-close" onclick="removeTab('tab1')">×</button>
+            </div>
+            <div class="tab-button" id="tab2-btn">
+                <span onclick="showTab('tab2')">Tab 2</span>
+                <button class="tab-close" onclick="removeTab('tab2')">×</button>
+            </div>
+            <div class="tab-button" id="tab3-btn">
+                <span onclick="showTab('tab3')">Tab 3</span>
+                <button class="tab-close" onclick="removeTab('tab3')">×</button>
+            </div>
+        </div>
+
+        <div id="tab1" class="tab" style="display: block;">
+            <h2 id="tab1-header1">Content for Tab 1 - Header 1</h2>
+            <p>This is the content for the first header in Tab 1.</p>
+            <h2 id="tab1-header2">Content for Tab 1 - Header 2</h2>
+            <p>This is the content for the second header in Tab 1.</p>
+        </div>
+
+        <div id="tab2" class="tab" style="display: none;">
+            <h2 id="tab2-header1">Content for Tab 2 - Header 1</h2>
+            <p>This is the content for the first header in Tab 2.</p>
+            <h2 id="tab2-header2">Content for Tab 2 - Header 2</h2>
+            <p>This is the content for the second header in Tab 2.</p>
+        </div>
+
+        <div id="tab3" class="tab" style="display: none;">
+            <h2 id="tab3-header1">Content for Tab 3 - Header 1</h2>
+            <p>This is the content for the first header in Tab 3.</p>
+            <h2 id="tab3-header2">Content for Tab 3 - Header 2</h2>
+            <p>This is the content for the second header in Tab 3.</p>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabId) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach((tab) => {
+                tab.style.display = 'none';
+            });
+
+            // Show the selected tab
+            const selectedTab = document.getElementById(tabId);
+            selectedTab.style.display = 'block';
+
+            // Update the TOC
+            updateTOC(tabId);
+        }
+
+        function updateTOC(tabId) {
+            // Get the TOC element and clear its content
+            const tocList = document.getElementById('toc-list');
+            tocList.innerHTML = '';
+
+            // Get the headers from the selected tab
+            const headers = document.querySelectorAll(`#${tabId} h2`);
+            let maxWidth = 0; // Variable to track the maximum width
+
+            // Populate the TOC with headers
+            headers.forEach((header) => {
+                const listItem = document.createElement('li');
+                const link = document.createElement('a');
+                link.href = `#${header.id}`;
+                link.textContent = header.textContent;
+
+                listItem.appendChild(link);
+                tocList.appendChild(listItem);
+
+                // Calculate the width of the link and update maxWidth
+                const linkWidth = link.getBoundingClientRect().width;
+                if (linkWidth > maxWidth) {
+                    maxWidth = linkWidth;
+                }
+            });
+
+            // Set the TOC width based on the longest entry, with a minimum width
+            const tocElement = document.getElementById('toc');
+            tocElement.style.width = Math.max(maxWidth + 30, 150) + 'px'; // Adding some padding
+        }
+
+        function removeTab(tabId) {
+            // Hide the tab content
+            const tabContent = document.getElementById(tabId);
+            if (tabContent) {
+                tabContent.style.display = 'none';
+            }
+
+            // Remove the tab button
+            const tabButton = document.getElementById(`${tabId}-btn`);
+            if (tabButton) {
+                tabButton.remove();
+            }
+        }
+
+        // Initialize the TOC for the first tab on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateTOC('tab1');
+        });
+    </script>
+</body>
+</html>
+"""
