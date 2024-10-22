@@ -98,3 +98,54 @@ flat_string = ', '.join(
 )
 
 print(flat_string)
+
+# Always apply these styles
+styles = [
+    # Add a less bold line below the header
+    {'selector': 'thead th', 'props': [
+        ('border-bottom', '1px solid black')  # Less bold line below header
+    ]},
+    # Styles for odd rows
+    {'selector': 'tr:nth-child(odd)', 'props': [
+        ('background-color', '#f2f2f2'),     # Grey background for odd rows
+        ('border', 'none'),                  # No border for rows
+    ]},
+    # Styles for even rows
+    {'selector': 'tr:nth-child(even)', 'props': [
+        ('background-color', 'white'),       # White background for even rows
+        ('border', 'none'),                  # No border for rows
+    ]},
+    # Styles for hover effect
+    {'selector': 'tr:hover', 'props': [
+        ('background-color', '#d9d9d9'),     # Darker grey on hover
+        ('border', 'none'),                  # No border for rows
+    ]},
+    # Styles for all cells
+    {'selector': 'td', 'props': [
+        ('padding', '8px'),                  # More space for rows
+        ('font-size', '14px'),               # Set font size (same as header)
+        ('border', 'none'),                  # No border for cells
+        ('text-align', 'left'),              # Align text to the left
+    ]}
+]
+
+# Conditionally add the header style if test_bool is True
+if test_bool:
+    styles.insert(0, {
+        'selector': 'th', 'props': [
+            ('background-color', 'white'),       # Match table body background
+            ('font-weight', 'bold'),             # Bold text for header
+            ('border', 'none'),                  # No border for headers
+            ('padding', '4px'),                  # Less row height
+            ('font-size', '12px'),               # Set font size
+            ('text-align', 'left'),              # Align text to the left
+        ]
+    })
+
+# Apply styles to the DataFrame
+styled_df = (
+    df.style
+    .set_table_styles(styles)
+    .set_table_attributes('style="border-collapse: collapse; width: auto;"')  # Autofit column width
+    .hide_index()
+)
