@@ -1,0 +1,56 @@
+import ipywidgets as widgets
+from IPython.display import display
+
+# Define categories and their corresponding enums
+categories = {
+    'Fruits': ['Apple', 'Banana', 'Orange'],
+    'Animals': ['Dog', 'Cat', 'Elephant'],
+    'Colors': ['Red', 'Green', 'Blue']
+}
+
+# Function to create a new row with select boxes
+def create_row(category='Fruits'):
+    category_select = widgets.Dropdown(
+        options=categories.keys(), 
+        value=category, 
+        description='Category:',
+        layout=widgets.Layout(width='200px')  # Adjust width for better fit
+    )
+    enum_select = widgets.Dropdown(
+        options=categories[category], 
+        description='Enum:',
+        layout=widgets.Layout(width='200px')  # Adjust width for better fit
+    )
+    
+    # Update enum options when the category changes
+    def update_enum(*args):
+        enum_select.options = categories[category_select.value]
+    
+    category_select.observe(update_enum, 'value')
+    
+    # Create the row with minimal spacing
+    row = widgets.HBox([category_select, enum_select], 
+                       layout=widgets.Layout(margin='0 0 5px 0', spacing='10px'))
+    
+    return row
+
+# Container to hold the dynamic rows
+item_list = widgets.VBox(layout=widgets.Layout(spacing='5px'))
+
+# Button to add a new row
+add_button = widgets.Button(description='Add Item')
+
+# Function to add a new row
+def add_item(b):
+    item_list.children = item_list.children + (create_row(),)
+
+add_button.on_click(add_item)
+
+# Create the "Select Filters:" text widget
+filter_label = widgets.HTML(value="<b>Select Filters:</b>")
+
+# Horizontal layout for the label and button
+header = widgets.HBox([filter_label, add_button])
+
+# Display the label, button, and item list
+display(header, item_list)
