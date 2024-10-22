@@ -89,3 +89,12 @@ display(HTML("""
 }
 </style>
 """))
+
+data = [{"Product Type": ["a", "b", "c"]}, "AIR Inputs::Filters"]
+
+# Convert to flat string
+flat_string = ', '.join(
+    [f"{key}: {', '.join(value)}" if isinstance(value, list) else value for item in data for key, value in item.items()] if isinstance(item, dict) else [item]
+)
+
+print(flat_string)
