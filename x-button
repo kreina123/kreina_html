@@ -63,22 +63,23 @@ html_content = """
 
         .tab-close {
             position: absolute;
-            top: 0;
-            right: 5px;
-            font-size: 12px;
+            top: 0px;
+            right: 0px;
+            font-size: 16px;
             cursor: pointer;
             width: 20px;
             height: 20px;
-            background-color: red;
-            color: white;
-            border-radius: 50%;
+            background-color: transparent;
+            color: #555;  /* Gray color similar to Brave's button */
+            border: none;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 16px;
-            line-height: 20px;
             padding: 0;
-            border: none;
+        }
+
+        .tab-close:hover {
+            color: #000; /* Darker color on hover */
         }
 
         .tab-content {
@@ -98,15 +99,15 @@ html_content = """
         <div class="tabs" id="tab-buttons">
             <div class="tab-button" id="tab1-btn">
                 <span onclick="showTab('tab1')">Tab 1</span>
-                <button class="tab-close" onclick="removeTab('tab1')">×</button>
+                <button class="tab-close" onclick="removeTab('tab1')">&times;</button>
             </div>
             <div class="tab-button" id="tab2-btn">
                 <span onclick="showTab('tab2')">Tab 2</span>
-                <button class="tab-close" onclick="removeTab('tab2')">×</button>
+                <button class="tab-close" onclick="removeTab('tab2')">&times;</button>
             </div>
             <div class="tab-button" id="tab3-btn">
                 <span onclick="showTab('tab3')">Tab 3</span>
-                <button class="tab-close" onclick="removeTab('tab3')">×</button>
+                <button class="tab-close" onclick="removeTab('tab3')">&times;</button>
             </div>
         </div>
 
