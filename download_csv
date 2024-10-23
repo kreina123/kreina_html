@@ -1,0 +1,51 @@
+import pandas as pd
+from io import BytesIO
+import base64
+
+# Sample DataFrame
+data = {
+    'Column1': [1.23456, 2.34567, 3.45678],
+    'Column2': [4.56789, 5.67891, 6.78912]
+}
+df = pd.DataFrame(data)
+
+# Function to convert DataFrame to HTML with rounding
+def df_to_html(df, rounded_df):
+    # Create HTML for the rounded DataFrame
+    html = rounded_df.to_html(index=False)
+    
+    # Encode the unrounded DataFrame to CSV for download
+    csv_data = BytesIO()
+    df.to_csv(csv_data, index=False)
+    csv_data.seek(0)
+    
+    # Base64 encode the CSV data
+    b64 = base64.b64encode(csv_data.read()).decode()
+    href = f'<a href="data:text/csv;base64,{b64}" download="unrounded_data.csv">Download Unrounded Data</a>'
+    
+    # Combine the DataFrame HTML and the download link
+    full_html = f"""
+    <html>
+    <head>
+    <style>
+        table, th, td {{ border: 1px solid black; border-collapse: collapse; padding: 5px; }}
+    </style>
+    </head>
+    <body>
+        {html}
+        <br>
+        {href}
+    </body>
+    </html>
+    """
+    return full_html
+
+# Create rounded DataFrame
+rounded_df = df.round(2)
+
+# Generate HTML
+html_code = df_to_html(df, rounded_df)
+
+# Write the HTML to a file
+with open("data_with_download.html", "w") as f:
+    f.write(html_code)
