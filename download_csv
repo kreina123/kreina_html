@@ -1,6 +1,4 @@
 import pandas as pd
-from io import BytesIO
-import base64
 
 # Sample DataFrame
 data = {
@@ -9,32 +7,87 @@ data = {
 }
 df = pd.DataFrame(data)
 
-# Function to convert DataFrame to HTML with rounding
+# Function to convert DataFrame to HTML with clipboard functionality
 def df_to_html(df, rounded_df):
     # Create HTML for the rounded DataFrame
-    html = rounded_df.to_html(index=False)
+    html = rounded_df.to_html(index=False, classes='dataframe', escape=False)
     
-    # Encode the unrounded DataFrame to CSV for download
-    csv_data = BytesIO()
-    df.to_csv(csv_data, index=False)
-    csv_data.seek(0)
+    # JavaScript function to copy data to clipboard
+    script = f"""
+    <script>
+        function copyToClipboard() {{
+            const data = {df.to_json(orient='records')};
+            const headers = Object.keys(data[0]).join('\\t'); // Get headers
+            const rows = data.map(row => Object.values(row).join('\\t')).join('\\n'); // Create tab-delimited rows
+            const text = headers + '\\n' + rows; // Combine headers and rows
+            navigator.clipboard.writeText(text).then(() => {{
+                alert('Data copied to clipboard!');
+            }});
+        }}
+    </script>
+    """
     
-    # Base64 encode the CSV data
-    b64 = base64.b64encode(csv_data.read()).decode()
-    href = f'<a href="data:text/csv;base64,{b64}" download="unrounded_data.csv">Download Unrounded Data</a>'
-    
-    # Combine the DataFrame HTML and the download link
+    # Combine the DataFrame HTML, copy button, and script
     full_html = f"""
     <html>
     <head>
     <style>
         table, th, td {{ border: 1px solid black; border-collapse: collapse; padding: 5px; }}
+        .copy-container {{
+            display: inline-block; /* Inline block for proper layout */
+            position: relative; /* Position for the icon and text */
+            padding-top: 50px;
+        }}
+        .copy-icon {{
+            display: inline-block;
+            cursor: pointer;
+            width: 40px; /* Increased width */
+            height: 40px; /* Increased height */
+            background-color: #4CAF50; /* Green background */
+            color: white; /* White icon color */
+            text-align: center;
+            line-height: 40px; /* Center icon vertically */
+            border-radius: 50%; /* Circular shape */
+            margin-left: 10px;
+            opacity: 0; /* Initially hidden */
+            transition: opacity 0.3s; /* Fade in effect */
+            font-size: 24px; /* Increase font size for better visibility */
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Add shadow for depth */
+            position: absolute; /* Position it absolutely */
+            bottom: 10px; /* Align it to the bottom */
+            left: 0; /* Align it to the left */
+        }}
+        .copy-container:hover .copy-icon {{
+            opacity: 1; /* Show icon on hover */
+        }}
+        .copy-text {{
+            display: none; /* Initially hidden */
+            margin-left: 10px;
+            font-size: 16px; /* Text size */
+            color: black; /* Text color */
+            vertical-align: middle; /* Align text vertically with the icon */
+            position: absolute; /* Position it absolutely */
+            bottom: 10px; /* Align it to the bottom */
+            left: 50px; /* Position next to the icon */
+        }}
+        .copy-container:hover .copy-text {{
+            display: inline; /* Show text on hover */
+        }}
+        .table-container:hover .copy-icon,
+        .table-container:hover .copy-text {{
+            opacity: 1; /* Show both on table hover */
+        }}
     </style>
     </head>
     <body>
-        {html}
-        <br>
-        {href}
+        <div class="table-container" style="position: relative;">
+            {html}
+            <div class="copy-container" onclick="copyToClipboard()">
+                <div class="copy-icon">📋</div> <!-- Clipboard icon -->
+                <div class="copy-text">Copy to Clipboard</div> <!-- Static text -->
+            </div>
+        </div>
+        {script}
     </body>
     </html>
     """
@@ -47,5 +100,5 @@ rounded_df = df.round(2)
 html_code = df_to_html(df, rounded_df)
 
 # Write the HTML to a file
-with open("data_with_download.html", "w") as f:
+with open("data_with_copy.html", "w") as f:
     f.write(html_code)
