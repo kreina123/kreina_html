@@ -1,0 +1,39 @@
+import pandas as pd
+from openpyxl import load_workbook
+
+# Sample DataFrame
+df = pd.DataFrame({
+    'Column1': [10, 20, 30],
+    'Column2': [40, 50, 60]
+})
+
+# Filepath to the Excel file (existing or new)
+file_path = 'sample_file.xlsx'
+sheet_name = 'MySheet'
+
+# Write DataFrame to an existing sheet or a new one
+def save_df_to_excel(df, file_path, sheet_name):
+    try:
+        # Try to open an existing workbook
+        book = load_workbook(file_path)
+        writer = pd.ExcelWriter(file_path, engine='openpyxl')
+        writer.book = book
+        
+        # Check if sheet already exists and remove it to avoid duplicates
+        if sheet_name in book.sheetnames:
+            del book[sheet_name]
+        
+        # Write the DataFrame to the specific sheet
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    except FileNotFoundError:
+        # If the file doesn't exist, create a new one
+        writer = pd.ExcelWriter(file_path, engine='openpyxl')
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    # Save the workbook
+    writer.save()
+    writer.close()
+
+# Call the function
+save_df_to_excel(df, file_path, sheet_name)
