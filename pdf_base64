@@ -1,0 +1,14 @@
+import base64
+
+def pdf_to_base64(pdf_path):
+    with open(pdf_path, "rb") as pdf_file:
+        # Read the PDF and encode it to Base64
+        base64_encoded_pdf = base64.b64encode(pdf_file.read()).decode("utf-8")
+    return base64_encoded_pdf
+
+# Usage
+pdf_path = "path/to/yourfile.pdf"  # Replace with your file path
+base64_pdf = pdf_to_base64(pdf_path)
+
+# Print or use the Base64-encoded PDF string
+print(base64_pdf)
