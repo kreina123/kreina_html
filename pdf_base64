@@ -12,3 +12,17 @@ base64_pdf = pdf_to_base64(pdf_path)
 
 # Print or use the Base64-encoded PDF string
 print(base64_pdf)
+
+.aspect-ratio-box {
+    width: 100%;              /* Set the desired width */
+    padding-top: 56.25%;      /* 16:9 ratio = 9 / 16 = 0.5625 or 56.25% */
+    position: relative;       /* Needed for positioning the inner content */
+}
+
+.aspect-ratio-box .content {
+    position: absolute;       /* Fill the aspect-ratio box */
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
