@@ -62,4 +62,23 @@ def save_df_with_formatting(df, file_path, sheet_name):
     workbook.save(file_path)
 
 # Call the function
-save_df_with_formatting(df, file_path, sheet_name)
+save_df_with_formatting(df, file_path, sheet_name
+
+import os
+from openpyxl import Workbook
+
+# File path of the workbook
+file_path = 'example.xlsx'
+
+# Check if the file exists
+if os.path.exists(file_path):
+    # If the file exists, delete it
+    os.remove(file_path)
+    print(f"{file_path} has been deleted.")
+else:
+    print(f"{file_path} does not exist.")
+
+# Create a new workbook after deleting (if desired)
+wb = Workbook()
+wb.save(file_path)
+print(f"New workbook created: {file_path}")
