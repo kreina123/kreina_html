@@ -1,28 +1,32 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import UnivariateSpline
+from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
 
-# Create example DataFrame
-data = {
-    'x': np.linspace(0, 10, 100),
-    'y': np.sin(np.linspace(0, 10, 100))
-}
-df = pd.DataFrame(data)
+# Create example DataFrame with noisy data
+np.random.seed(0)
+x = np.linspace(0, 10, 100)
+y = np.sin(x) + np.random.normal(scale=0.1, size=len(x))  # Add noise
+df = pd.DataFrame({'x': x, 'y': y})
 
-# Fit a spline to the y data
-spline = UnivariateSpline(df['x'], df['y'], s=0)
+# Step 1: Apply Savitzky-Golay filter for initial denoising
+df['y_denoised'] = savgol_filter(df['y'], window_length=11, polyorder=3)
 
-# Calculate the first derivative at each x point
+# Step 2: Fit a spline to the denoised data
+spline = UnivariateSpline(df['x'], df['y_denoised'], s=1)  # Set smoothing parameter s
+
+# Step 3: Calculate the first derivative at each x point
 df['y_derivative'] = spline.derivative()(df['x'])
 
 # Display the resulting DataFrame
 print(df.head())
 
-# Plotting the original data and its derivative for visualization
+# Plot original data, denoised data, and derivative for visualization
 plt.figure(figsize=(12, 6))
-plt.plot(df['x'], df['y'], label='Original data')
-plt.plot(df['x'], df['y_derivative'], label='First derivative', linestyle='--')
+plt.plot(df['x'], df['y'], label='Original data with noise', alpha=0.5)
+plt.plot(df['x'], df['y_denoised'], label='Denoised data', linewidth=2)
+plt.plot(df['x'], df['y_derivative'], label='First derivative of denoised data', linestyle='--')
 plt.xlabel('x')
 plt.ylabel('y / dy')
 plt.legend()
