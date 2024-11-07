@@ -10,11 +10,14 @@ x = np.linspace(0, 10, 100)
 y = np.sin(x) + np.random.normal(scale=0.1, size=len(x))  # Add noise
 df = pd.DataFrame({'x': x, 'y': y})
 
+# Ensure x is strictly increasing by sorting and removing duplicates if needed
+df = df.sort_values(by='x').drop_duplicates(subset='x').reset_index(drop=True)
+
 # Step 1: Apply Savitzky-Golay filter for initial denoising
 df['y_denoised'] = savgol_filter(df['y'], window_length=11, polyorder=3)
 
-# Step 2: Fit a spline to the denoised data
-spline = UnivariateSpline(df['x'], df['y_denoised'], s=1)  # Set smoothing parameter s
+# Step 2: Fit a smoothing spline to the denoised data
+spline = UnivariateSpline(df['x'], df['y_denoised'], s=1)  # Adjust s as needed
 
 # Step 3: Calculate the first derivative at each x point
 df['y_derivative'] = spline.derivative()(df['x'])
