@@ -1,0 +1,29 @@
+import numpy as np
+import pandas as pd
+from scipy.interpolate import UnivariateSpline
+import matplotlib.pyplot as plt
+
+# Create example DataFrame
+data = {
+    'x': np.linspace(0, 10, 100),
+    'y': np.sin(np.linspace(0, 10, 100))
+}
+df = pd.DataFrame(data)
+
+# Fit a spline to the y data
+spline = UnivariateSpline(df['x'], df['y'], s=0)
+
+# Calculate the first derivative at each x point
+df['y_derivative'] = spline.derivative()(df['x'])
+
+# Display the resulting DataFrame
+print(df.head())
+
+# Plotting the original data and its derivative for visualization
+plt.figure(figsize=(12, 6))
+plt.plot(df['x'], df['y'], label='Original data')
+plt.plot(df['x'], df['y_derivative'], label='First derivative', linestyle='--')
+plt.xlabel('x')
+plt.ylabel('y / dy')
+plt.legend()
+plt.show()
