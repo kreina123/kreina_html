@@ -1,0 +1,5 @@
+def ordinal_suffix(day):
+    if 10 <= day <= 20:  # Only check the day itself
+        return "th"
+    else:
+        return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
