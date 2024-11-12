@@ -18,3 +18,5 @@ def ordinal_suffix(day):
 formatted_date = python_date.strftime(f"%b {python_date.day}{ordinal_suffix(python_date.day)}, %Y")
 
 print(formatted_date)
+
+python_date = datetime.datetime.strptime(input_date_str, "%m-%d-%Y")
