@@ -1,5 +1,20 @@
+import numpy as np
+import datetime
+
+# Example NumPy date
+numpy_date = np.datetime64('2024-09-30')
+
+# Convert NumPy date to Python datetime
+python_date = numpy_date.astype(datetime.datetime)
+
+# Define a function to add ordinal suffix to day
 def ordinal_suffix(day):
-    if 10 <= day <= 20:  # Only check the day itself
+    if 10 <= day <= 20:  # Check the entire day for special cases
         return "th"
     else:
         return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+# Format the date
+formatted_date = python_date.strftime(f"%b {python_date.day}{ordinal_suffix(python_date.day)}, %Y")
+
+print(formatted_date)
