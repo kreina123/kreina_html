@@ -1,9 +1,17 @@
 import pandas as pd
 
-# Sample data
+# Sample data with 10 columns
 data = {
     'Product Type': ['Type A', 'Type B', 'Type C'],
     'Column2': ['Data 1', 'Data 2', 'Data 3'],
+    'Column3': ['Data 4', 'Data 5', 'Data 6'],
+    'Column4': ['Data 7', 'Data 8', 'Data 9'],
+    'Column5': ['Data 10', 'Data 11', 'Data 12'],
+    'Column6': ['Data 13', 'Data 14', 'Data 15'],
+    'Column7': ['Data 16', 'Data 17', 'Data 18'],
+    'Column8': ['Data 19', 'Data 20', 'Data 21'],
+    'Column9': ['Data 22', 'Data 23', 'Data 24'],
+    'Column10': ['Data 25', 'Data 26', 'Data 27']
 }
 
 # Create a DataFrame
@@ -13,6 +21,14 @@ df = pd.DataFrame(data)
 nested_data = {
     'Nested Column1': ['Nested Data 1', 'Nested Data 2', 'Nested Data 3'],
     'Nested Column2': ['More Data 1', 'More Data 2', 'More Data 3'],
+    'Nested Column3': ['More Data 4', 'More Data 5', 'More Data 6'],
+    'Nested Column4': ['More Data 7', 'More Data 8', 'More Data 9'],
+    'Nested Column5': ['More Data 10', 'More Data 11', 'More Data 12'],
+    'Nested Column6': ['More Data 13', 'More Data 14', 'More Data 15'],
+    'Nested Column7': ['More Data 16', 'More Data 17', 'More Data 18'],
+    'Nested Column8': ['More Data 19', 'More Data 20', 'More Data 21'],
+    'Nested Column9': ['More Data 22', 'More Data 23', 'More Data 24'],
+    'Nested Column10': ['More Data 25', 'More Data 26', 'More Data 27']
 }
 
 nested_df = pd.DataFrame(nested_data)
@@ -45,13 +61,21 @@ def create_html_table(df, nested_df, css_styles):
     rows = []
     for i, row in df.iterrows():
         # Create a row for the main DataFrame with the "+" button in the "Product Type" column
-        rows.append(f'<tr class="main-row"><td><button class="expand-btn" id="expand-btn-{i}" onclick="toggleRow({i})">+</button> {row["Product Type"]}</td><td>{row["Column2"]}</td></tr>')
+        rows.append(f'<tr class="main-row"><td><button class="expand-btn" id="expand-btn-{i}" onclick="toggleRow({i})">+</button> {row["Product Type"]}</td>')
+
+        # Add all columns to the main table row
+        for col in df.columns[1:]:
+            rows.append(f'<td>{row[col]}</td>')
+        rows.append('</tr>')
         
         # Create a row for the nested DataFrame (initially hidden)
         nested_rows = ''
         for j, nested_row in nested_df.iterrows():
-            # Move the nested data over by adding an empty first column
-            nested_rows += f'<tr class="nested-row nested-row-{i}" style="display:none;"><td>{nested_row["Nested Column1"]}</td><td>{nested_row["Nested Column2"]}</td></tr>'
+            nested_rows += f'<tr class="nested-row nested-row-{i}" style="display:none;">'
+            # Add all nested columns
+            for nested_col in nested_df.columns:
+                nested_rows += f'<td>{nested_row[nested_col]}</td>'
+            nested_rows += '</tr>'
         
         rows.append(nested_rows)
     
@@ -75,6 +99,9 @@ def create_html_table(df, nested_df, css_styles):
             position: sticky;
             top: 0;
             z-index: 1;  /* Ensures headers stay on top */
+            word-wrap: break-word;  /* Ensures long header text wraps */
+            white-space: normal;  /* Allows wrapping */
+            text-align: center;  /* Align header text in the center */
         }}
         tbody tr:nth-child(even) {{
             background-color: #f9f9f9;
@@ -103,6 +130,14 @@ def create_html_table(df, nested_df, css_styles):
             <tr>
                 <th>Product Type</th>
                 <th>Column2</th>
+                <th>Column3</th>
+                <th>Column4</th>
+                <th>Column5</th>
+                <th>Column6</th>
+                <th>Column7</th>
+                <th>Column8</th>
+                <th>Column9</th>
+                <th>Column10</th>
             </tr>
         </thead>
         <tbody>
@@ -134,5 +169,5 @@ def create_html_table(df, nested_df, css_styles):
 html_content = create_html_table(df, nested_df, css_styles)
 
 # Save the HTML to a file
-with open('table_with_toggle_plus_minus.html', 'w') as f:
+with open('table_with_toggle_plus_minus_10_columns_wrapped.html', 'w') as f:
     f.write(html_content)
