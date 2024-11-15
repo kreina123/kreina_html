@@ -45,7 +45,7 @@ def create_html_table(df, nested_df, css_styles):
     rows = []
     for i, row in df.iterrows():
         # Create a row for the main DataFrame with the "+" button in the "Product Type" column
-        rows.append(f'<tr class="main-row"><td><button class="expand-btn" onclick="toggleRow({i})">+</button> {row["Product Type"]}</td><td>{row["Column2"]}</td></tr>')
+        rows.append(f'<tr class="main-row"><td><button class="expand-btn" id="expand-btn-{i}" onclick="toggleRow({i})">+</button> {row["Product Type"]}</td><td>{row["Column2"]}</td></tr>')
         
         # Create a row for the nested DataFrame (initially hidden)
         nested_rows = ''
@@ -112,9 +112,18 @@ def create_html_table(df, nested_df, css_styles):
     <script>
         function toggleRow(rowIndex) {{
             var rows = document.querySelectorAll('.nested-row-' + rowIndex);
+            var button = document.getElementById('expand-btn-' + rowIndex);
+
             rows.forEach(function(row) {{
                 row.style.display = (row.style.display === 'none') ? '' : 'none';
             }});
+
+            // Toggle the button text between "+" and "-"
+            if (rows[0].style.display === 'none') {{
+                button.innerHTML = '+';
+            }} else {{
+                button.innerHTML = '-';
+            }}
         }}
     </script>
     '''
@@ -125,5 +134,5 @@ def create_html_table(df, nested_df, css_styles):
 html_content = create_html_table(df, nested_df, css_styles)
 
 # Save the HTML to a file
-with open('table_no_italics_on_expand.html', 'w') as f:
+with open('table_with_toggle_plus_minus.html', 'w') as f:
     f.write(html_content)
