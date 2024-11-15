@@ -1,0 +1,129 @@
+import pandas as pd
+
+# Sample data
+data = {
+    'Product Type': ['Type A', 'Type B', 'Type C'],
+    'Column2': ['Data 1', 'Data 2', 'Data 3'],
+}
+
+# Create a DataFrame
+df = pd.DataFrame(data)
+
+# DataFrame to show on expanding (this can represent additional information for each product type)
+nested_data = {
+    'Nested Column1': ['Nested Data 1', 'Nested Data 2', 'Nested Data 3'],
+    'Nested Column2': ['More Data 1', 'More Data 2', 'More Data 3'],
+}
+
+nested_df = pd.DataFrame(nested_data)
+
+# Apply some styling to the main DataFrame
+styled_df = df.style.set_table_styles(
+    [{'selector': 'thead th', 'props': [('background-color', '#f4f4f4'), ('font-weight', 'bold'), ('padding', '10px'), ('text-align', 'left')]},
+     {'selector': 'tbody tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
+     {'selector': 'tbody tr:hover', 'props': [('background-color', '#f1f1f1')]},
+     {'selector': 'td', 'props': [('padding', '8px'), ('text-align', 'left'), ('border', '1px solid #ddd')]},
+     {'selector': '.expand-btn', 'props': [('background-color', '#007bff'), ('color', 'white'), ('border', 'none'),
+                                           ('padding', '5px 10px'), ('cursor', 'pointer'), ('font-size', '14px'),
+                                           ('border-radius', '4px')]},
+     {'selector': '.expand-btn:hover', 'props': [('background-color', '#0056b3')]},
+     {'selector': 'table', 'props': [('width', '100%'), ('border-collapse', 'collapse')]},
+     {'selector': 'tbody', 'props': [('border-top', '1px solid #ddd')]},
+     {'selector': '.nested-row', 'props': [('background-color', '#f9f9f9')]}  # Removed italic style here
+])
+
+# Extract the rendered HTML and CSS from the Styler
+styled_html = styled_df.render()
+
+# Extract the CSS styles from the HTML (embedded in <style> tag)
+css_start = styled_html.find('<style type="text/css">')
+css_end = styled_html.find('</style>') + len('</style>')
+css_styles = styled_html[css_start:css_end]
+
+# Convert the main DataFrame to HTML (without the styles) and add the expand functionality
+def create_html_table(df, nested_df, css_styles):
+    rows = []
+    for i, row in df.iterrows():
+        # Create a row for the main DataFrame with the "+" button in the "Product Type" column
+        rows.append(f'<tr class="main-row"><td><button class="expand-btn" onclick="toggleRow({i})">+</button> {row["Product Type"]}</td><td>{row["Column2"]}</td></tr>')
+        
+        # Create a row for the nested DataFrame (initially hidden)
+        nested_rows = ''
+        for j, nested_row in nested_df.iterrows():
+            # Move the nested data over by adding an empty first column
+            nested_rows += f'<tr class="nested-row nested-row-{i}" style="display:none;"><td>{nested_row["Nested Column1"]}</td><td>{nested_row["Nested Column2"]}</td></tr>'
+        
+        rows.append(nested_rows)
+    
+    # HTML Table with a button to expand each row
+    table_html = f'''
+    {css_styles}  <!-- Inject the extracted CSS styles from the pandas Styler -->
+    <style>
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }}
+        th, td {{
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }}
+        thead th {{
+            background-color: #f4f4f4;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 1;  /* Ensures headers stay on top */
+        }}
+        tbody tr:nth-child(even) {{
+            background-color: #f9f9f9;
+        }}
+        tbody tr:hover {{
+            background-color: #f1f1f1;
+        }}
+        .expand-btn {{
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+        }}
+        .expand-btn:hover {{
+            background-color: #0056b3;
+        }}
+        .nested-row {{
+            background-color: #f9f9f9;
+        }}
+    </style>
+    <table>
+        <thead>
+            <tr>
+                <th>Product Type</th>
+                <th>Column2</th>
+            </tr>
+        </thead>
+        <tbody>
+            {''.join(rows)}
+        </tbody>
+    </table>
+    <script>
+        function toggleRow(rowIndex) {{
+            var rows = document.querySelectorAll('.nested-row-' + rowIndex);
+            rows.forEach(function(row) {{
+                row.style.display = (row.style.display === 'none') ? '' : 'none';
+            }});
+        }}
+    </script>
+    '''
+
+    return table_html
+
+# Generate the HTML with styles and expand functionality
+html_content = create_html_table(df, nested_df, css_styles)
+
+# Save the HTML to a file
+with open('table_no_italics_on_expand.html', 'w') as f:
+    f.write(html_content)
