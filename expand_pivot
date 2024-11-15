@@ -1,34 +1,38 @@
 import pandas as pd
+import random
 
-# Sample data with 10 columns
+# Generate sample data for 100 rows
+product_types = [f'Type {chr(65 + i)}' for i in range(26)]  # Generate Type A to Type Z
+product_types *= 4  # Repeat to get 100 rows (4 * 26 = 104, we'll trim to 100)
+
 data = {
-    'Product Type': ['Type A', 'Type B', 'Type C'],
-    'Column2': ['Data 1', 'Data 2', 'Data 3'],
-    'Column3': ['Data 4', 'Data 5', 'Data 6'],
-    'Column4': ['Data 7', 'Data 8', 'Data 9'],
-    'Column5': ['Data 10', 'Data 11', 'Data 12'],
-    'Column6': ['Data 13', 'Data 14', 'Data 15'],
-    'Column7': ['Data 16', 'Data 17', 'Data 18'],
-    'Column8': ['Data 19', 'Data 20', 'Data 21'],
-    'Column9': ['Data 22', 'Data 23', 'Data 24'],
-    'Column10': ['Data 25', 'Data 26', 'Data 27']
+    'Product Type': product_types[:100],  # Trim to exactly 100 entries
+    'Column2': [f'Data {i}' for i in range(1, 101)],
+    'Column3': [f'Data {i+100}' for i in range(1, 101)],
+    'Column4': [f'Data {i+200}' for i in range(1, 101)],
+    'Column5': [f'Data {i+300}' for i in range(1, 101)],
+    'Column6': [f'Data {i+400}' for i in range(1, 101)],
+    'Column7': [f'Data {i+500}' for i in range(1, 101)],
+    'Column8': [f'Data {i+600}' for i in range(1, 101)],
+    'Column9': [f'Data {i+700}' for i in range(1, 101)],
+    'Column10': [f'Data {i+800}' for i in range(1, 101)],
 }
 
-# Create a DataFrame
+# Create a DataFrame for main data
 df = pd.DataFrame(data)
 
-# DataFrame to show on expanding (this can represent additional information for each product type)
+# Generate nested data with 100 rows (example)
 nested_data = {
-    'Nested Column1': ['Nested Data 1', 'Nested Data 2', 'Nested Data 3'],
-    'Nested Column2': ['More Data 1', 'More Data 2', 'More Data 3'],
-    'Nested Column3': ['More Data 4', 'More Data 5', 'More Data 6'],
-    'Nested Column4': ['More Data 7', 'More Data 8', 'More Data 9'],
-    'Nested Column5': ['More Data 10', 'More Data 11', 'More Data 12'],
-    'Nested Column6': ['More Data 13', 'More Data 14', 'More Data 15'],
-    'Nested Column7': ['More Data 16', 'More Data 17', 'More Data 18'],
-    'Nested Column8': ['More Data 19', 'More Data 20', 'More Data 21'],
-    'Nested Column9': ['More Data 22', 'More Data 23', 'More Data 24'],
-    'Nested Column10': ['More Data 25', 'More Data 26', 'More Data 27']
+    'Nested Column1': [f'Nested Data {i}' for i in range(1, 101)],
+    'Nested Column2': [f'More Data {i}' for i in range(1, 101)],
+    'Nested Column3': [f'More Data {i+100}' for i in range(1, 101)],
+    'Nested Column4': [f'More Data {i+200}' for i in range(1, 101)],
+    'Nested Column5': [f'More Data {i+300}' for i in range(1, 101)],
+    'Nested Column6': [f'More Data {i+400}' for i in range(1, 101)],
+    'Nested Column7': [f'More Data {i+500}' for i in range(1, 101)],
+    'Nested Column8': [f'More Data {i+600}' for i in range(1, 101)],
+    'Nested Column9': [f'More Data {i+700}' for i in range(1, 101)],
+    'Nested Column10': [f'More Data {i+800}' for i in range(1, 101)],
 }
 
 nested_df = pd.DataFrame(nested_data)
@@ -169,5 +173,5 @@ def create_html_table(df, nested_df, css_styles):
 html_content = create_html_table(df, nested_df, css_styles)
 
 # Save the HTML to a file
-with open('table_with_toggle_plus_minus_10_columns_wrapped.html', 'w') as f:
+with open('table_with_toggle_plus_minus_100_rows.html', 'w') as f:
     f.write(html_content)
