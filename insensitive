@@ -1,21 +1,52 @@
 class CaseInsensitiveDict(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self._key_map = {}  # Maps normalized keys to the last original key
+        self.update(*args, **kwargs)
+
+    def _normalize_key(self, key):
+        """Normalize keys for case-insensitive comparisons."""
+        if isinstance(key, tuple):
+            # Normalize each string in the tuple for comparison
+            return tuple(k.lower() if isinstance(k, str) else k for k in key)
+        elif isinstance(key, str):
+            return key.lower()
+        else:
+            return key  # For unsupported types, return the key as-is
+
     def __setitem__(self, key, value):
-        super().__setitem__(key.title(), value)
+        normalized_key = self._normalize_key(key)
+        # Remove old key if a conflict exists
+        if normalized_key in self._key_map:
+            old_key = self._key_map[normalized_key]
+            super().__delitem__(old_key)
+        # Map the normalized key to the new key
+        self._key_map[normalized_key] = key
+        super().__setitem__(key, value)
 
     def __getitem__(self, key):
-        return super().__getitem__(key.title())
+        normalized_key = self._normalize_key(key)
+        original_key = self._key_map[normalized_key]
+        return super().__getitem__(original_key)
 
     def __delitem__(self, key):
-        super().__delitem__(key.title())
+        normalized_key = self._normalize_key(key)
+        original_key = self._key_map.pop(normalized_key)
+        super().__delitem__(original_key)
 
     def __contains__(self, key):
-        return super().__contains__(key.title())
+        normalized_key = self._normalize_key(key)
+        return normalized_key in self._key_map
 
     def get(self, key, default=None):
-        return super().get(key.title(), default)
+        if key in self:
+            return self[key]
+        return default
 
     def setdefault(self, key, default=None):
-        return super().setdefault(key.title(), default)
+        if key not in self:
+            self[key] = default
+        return self[key]
 
     def update(self, *args, **kwargs):
         for key, value in dict(*args, **kwargs).items():
@@ -23,10 +54,13 @@ class CaseInsensitiveDict(dict):
 
 # Example usage:
 ci_dict = CaseInsensitiveDict()
-ci_dict["someKey"] = "value"
-print(ci_dict["SomeKey"])  # Output: value
-print(ci_dict["SOMEKEY"])  # Output: value
+ci_dict["Key"] = "value1"
+ci_dict[("Part1", "PART2")] = "value2"
 
-ci_dict["AnotherKey"] = 123
-print("anotherkey" in ci_dict)  # Output: True
-print(ci_dict.get("anotherKey"))  # Output: 123
+# Overwrite with different casing
+ci_dict["kEy"] = "value3"
+ci_dict[("part1", "part2")] = "value4"
+
+print(ci_dict["KEY"])  # Output: value3
+print(ci_dict[("PART1", "PART2")])  # Output: value4
+print(ci_dict)  # Output: {'kEy': 'value3', ('part1', 'part2'): 'value4'}
