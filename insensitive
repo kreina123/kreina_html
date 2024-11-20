@@ -1,32 +1,32 @@
 class CaseInsensitiveDict(dict):
     def __setitem__(self, key, value):
-        super().__setitem__(key.lower(), value)
+        super().__setitem__(key.title(), value)
 
     def __getitem__(self, key):
-        return super().__getitem__(key.lower())
+        return super().__getitem__(key.title())
 
     def __delitem__(self, key):
-        super().__delitem__(key.lower())
+        super().__delitem__(key.title())
 
     def __contains__(self, key):
-        return super().__contains__(key.lower())
+        return super().__contains__(key.title())
 
     def get(self, key, default=None):
-        return super().get(key.lower(), default)
+        return super().get(key.title(), default)
 
     def setdefault(self, key, default=None):
-        return super().setdefault(key.lower(), default)
+        return super().setdefault(key.title(), default)
 
     def update(self, *args, **kwargs):
-        # Update with other dict or kwargs
         for key, value in dict(*args, **kwargs).items():
             self[key] = value
 
 # Example usage:
 ci_dict = CaseInsensitiveDict()
-ci_dict["Key"] = "value"
-print(ci_dict["key"])  # Output: value
-print(ci_dict["KEY"])  # Output: value
+ci_dict["someKey"] = "value"
+print(ci_dict["SomeKey"])  # Output: value
+print(ci_dict["SOMEKEY"])  # Output: value
 
-ci_dict["ANOTHER"] = 123
-print("another" in ci_dict)  # Output: True
+ci_dict["AnotherKey"] = 123
+print("anotherkey" in ci_dict)  # Output: True
+print(ci_dict.get("anotherKey"))  # Output: 123
