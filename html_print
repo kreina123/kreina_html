@@ -1,0 +1,440 @@
+html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print HTML Content</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .tab {
+            display: none;
+        }
+        .tab.active {
+            display: block;
+        }
+        .tabs {
+            margin-bottom: 20px;
+        }
+        .tab-buttons button {
+            margin-right: 5px;
+            padding: 10px;
+            cursor: pointer;
+        }
+        table, th, td {
+            border: 1px solid black;
+            border-collapse: collapse;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        table {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="tabs">
+        <div class="tab-buttons">
+            <button onclick="showTab(0)">Tab 1</button>
+            <button onclick="showTab(1)">Tab 2</button>
+            <button onclick="showTab(2)">Tab 3</button>
+        </div>
+        <div class="tab active" id="tab-0">
+    <h2>Tab 1 Content</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Header 1</th><th>Header 2</th><th>Header 3</th><th>Header 4</th>
+            <th>Header 5</th><th>Header 6</th><th>Header 7</th><th>Header 8</th>
+            <th>Header 9</th><th>Header 10</th><th>Header 11</th><th>Header 12</th>
+        </tr>
+        </thead>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+       <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        <tr>
+            <td>Data 1</td><td>Data 2</td><td>Data 3</td><td>Data 4</td>
+            <td>Data 5</td><td>Data 6</td><td>Data 7</td><td>Data 8</td>
+            <td>Data 9</td><td>Data 10</td><td>Data 11</td><td>Data 12</td>
+        </tr>
+        
+    </table>
+    <p>This table demonstrates a very wide structure for testing printing scenarios with wide content.</p>
+</div>
+
+        <div class="tab" id="tab-1">
+            <h2>Tab 2 Content</h2>
+            <table>
+                <tr><th>Header A</th><th>Header B</th></tr>
+                <tr><td>Data A</td><td>Data B</td></tr>
+                <tr><td>Data C</td><td>Data D</td></tr>
+                <tr><td>Data E</td><td>Data F</td></tr>
+                <tr><td>Data G</td><td>Data H</td></tr>
+            </table>
+            <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium. Lorem ipsum dolor sit amet.</p>
+            <p>Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur.</p>
+            <p>Cras luctus interdum sem, eu facilisis ligula semper sed. Suspendisse potenti. Curabitur aliquet massa nec quam aliquam, id pretium nulla tristique.</p>
+        </div>
+        <div class="tab" id="tab-2">
+            <h2>Tab 3 Content</h2>
+            <p>Charts and graphs can go here!</p>
+            <p>Aliquam erat volutpat. Nulla facilisi. Pellentesque ac convallis justo. Curabitur vitae odio non quam aliquam congue.</p>
+            <p>Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est.</p>
+            <p>Fusce tristique sapien nec eros condimentum, vel ultrices nisi fermentum. Donec scelerisque bibendum orci, eget luctus ipsum vehicula id.</p>
+        </div>
+    </div>
+    <button onclick="printAll()">Print All Tabs</button>
+
+    <iframe id="print-frame" style="display: none;"></iframe>
+
+<script>
+    // Disable Ctrl+P or Cmd+P globally
+    function disableDefaultPrintShortcut() {
+        document.addEventListener("keydown", (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
+                event.preventDefault(); // Block the default print action
+                alert("Use the 'Custom Print' button to print this page."); // Inform users
+            }
+        });
+    }
+
+    // Function to create or refresh the print iframe
+    function createOrResetPrintFrame() {
+        let printFrame = document.getElementById("print-frame");
+        if (printFrame) {
+            // Remove the existing iframe to reset its content
+            printFrame.parentNode.removeChild(printFrame);
+        }
+        // Create a fresh iframe
+        printFrame = document.createElement("iframe");
+        printFrame.id = "print-frame";
+        printFrame.style.display = "none"; // Hide the iframe
+        document.body.appendChild(printFrame);
+        return printFrame;
+    }
+
+    // Custom print function
+    function printAll() {
+        const printFrame = createOrResetPrintFrame(); // Always reset the frame
+        const doc = printFrame.contentWindow.document;
+
+        doc.open();
+        doc.write(`
+            <html>
+                <head>
+                    <title>Print Preview</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                        }
+                        table, th, td {
+                            border: 1px solid black;
+                            border-collapse: collapse;
+                            padding: 8px;
+                            text-align: left;
+                        }
+                        th {
+                            background-color: #f2f2f2;
+                        }
+                        table {
+                            width: 100%;
+                            margin-bottom: 20px;
+                        }
+                        /* Ensure that the table header is repeated on every new page if the table is long */
+                        thead {
+                            display: table-header-group;
+                        }
+                        /* Prevent rows from breaking across pages */
+                        tr {
+                            page-break-inside: avoid;
+                        }
+                        /* Avoid forcing tables to start on a new page unless necessary */
+                        table {
+                            page-break-after: auto;
+                        }
+                    </style>
+                </head>
+                <body>
+        `);
+
+        // Collect all tab contents and append them to the print frame
+        document.querySelectorAll(".tab").forEach((tab) => {
+            const clone = tab.cloneNode(true);
+            clone.style.display = "block"; // Ensure it's visible for printing
+            doc.body.appendChild(clone);
+        });
+
+        doc.write(`
+                </body>
+            </html>
+        `);
+        doc.close();
+
+        // Trigger the print dialog
+        printFrame.contentWindow.focus();
+        printFrame.contentWindow.print();
+    }
+
+    // Initialize the custom behavior when the page loads
+    document.addEventListener("DOMContentLoaded", () => {
+        disableDefaultPrintShortcut();
+    });
+</script>
+
+</body>
+</html>
+"""
+
+# Save the HTML to a file
+with open("print_tabs.html", "w") as file:
+    file.write(html_content)
+
+print("HTML file 'print_tabs.html' created successfully.")
