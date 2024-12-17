@@ -1,0 +1,95 @@
+html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabs with Informational Banner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 1rem;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-bottom: none;
+            background-color: #f1f1f1;
+        }
+        .tab.active {
+            background-color: #fff;
+            font-weight: bold;
+        }
+        .tab-content {
+            border: 1px solid #ccc;
+            padding: 20px;
+        }
+        .informational {
+            display: flex;
+            align-items: center;
+            border-left: 4px solid #2680eb; /* Spectrum-style left border */
+            background-color: #f0f8ff; /* Soft blue background */
+            color: #004085; /* Text color */
+            padding: 10px 16px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        .informational-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            background-color: #2680eb; /* Blue background for icon */
+            color: white; /* White info symbol */
+            font-weight: bold;
+            font-size: 1rem;
+            border-radius: 50%; /* Makes the icon round */
+            margin-right: 10px;
+        }
+        .informational-message {
+            flex: 1; /* Ensures the message spans the rest of the banner */
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="tabs">
+        <div class="tab active" onclick="showTab('tab-a')">Tab A</div>
+        <div class="tab" onclick="showTab('tab-b')">Tab B</div>
+    </div>
+    <div class="tab-content" id="tab-a">
+        <div class="informational">
+            <div class="informational-icon">i</div>
+            <p class="informational-message">Missing Channels: A, B, C, D</p>
+        </div>
+        <p>Content for Tab A goes here.</p>
+    </div>
+    <div class="tab-content" id="tab-b" style="display: none;">
+        <p>Content for Tab B goes here.</p>
+    </div>
+
+    <script>
+        function showTab(tabId) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach(tab => tab.classList.remove('active'));
+            contents.forEach(content => content.style.display = 'none');
+
+            document.querySelector(`[onclick="showTab('${tabId}')"]`).classList.add('active');
+            document.getElementById(tabId).style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+"""
+
+# Save HTML to a file if needed
+with open("tabs_with_alert_banner.html", "w") as file:
+    file.write(html_content)
