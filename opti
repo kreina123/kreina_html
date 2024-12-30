@@ -1,0 +1,196 @@
+import numpy as np
+from scipy.optimize import minimize
+from shapely.geometry import Polygon
+
+def rotated_square_corners(x, y, theta):
+    """
+    Calculate the corners of a rotated square with fixed side length 1.
+    """
+    half_s = 0.5  # Half of the fixed side length
+    corners = np.array([
+        [-half_s, -half_s],
+        [half_s, -half_s],
+        [half_s, half_s],
+        [-half_s, half_s]
+    ])
+    rotation_matrix = np.array([
+        [np.cos(theta), -np.sin(theta)],
+        [np.sin(theta), np.cos(theta)]
+    ])
+    rotated_corners = np.dot(corners, rotation_matrix) + [x, y]
+    return rotated_corners
+
+def overlap_area_rotated(square1, square2):
+    """
+    Compute the overlap area of two rotated squares.
+    """
+    corners1 = rotated_square_corners(*square1)
+    corners2 = rotated_square_corners(*square2)
+    poly1 = Polygon(corners1)
+    poly2 = Polygon(corners2)
+    intersection = poly1.intersection(poly2)
+    return intersection.area if intersection.is_valid else 0
+
+def total_overlap(squares):
+    """
+    Calculate the total overlap area among all squares.
+    """
+    n = len(squares)
+    overlap = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            overlap += overlap_area_rotated(squares[i], squares[j])
+    return overlap
+
+def max_extent(squares):
+    """
+    Calculate the maximum extent (max(x_edge, y_edge)) of all squares.
+    """
+    max_x, max_y = 0, 0
+    for x, y, theta in squares:
+        corners = rotated_square_corners(x, y, theta)
+        max_x = max(max_x, np.max(corners[:, 0]))
+        max_y = max(max_y, np.max(corners[:, 1]))
+    return max(max_x, max_y)
+
+def objective(vars):
+    """
+    Objective function to minimize max extent.
+    vars: [x1, y1, theta1, ..., xN, yN, thetaN]
+    """
+    squares = [vars[i:i+3] for i in range(0, len(vars), 3)]
+    
+    xs = []
+    ys = []
+    
+    for x, y, theta in squares:
+        corners = rotated_square_corners(x, y, theta)
+        for x1,y1 in corners:
+            xs.append(x1)
+            ys.append(y1)
+        
+    new_obj = (max(max(xs) - min(xs), max(ys) - min(ys)))
+        
+    return new_obj + 50 * total_overlap(squares)
+
+def overlap_constraint(vars):
+    """
+    Constraint that ensures no overlap between squares.
+    Returns a list of constraints (one for each pair of squares).
+    """
+    squares = [vars[i:i+3] for i in range(0, len(vars), 3)]
+    n = len(squares)
+    constraints = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            overlap = overlap_area_rotated(squares[i], squares[j])
+            constraints.append(-overlap)  # Must be <= 0
+    return constraints
+
+obj = 1000000
+
+for i in range(1000):
+    # Number of squares
+    n_squares = 17
+
+    # Bounds for each square's center and rotation
+    bounds = []
+    for _ in range(n_squares):
+        bounds.extend([
+            (0, 5),          # x
+            (0, 5),          # y
+            (0, 2 * np.pi)   # rotation angle
+        ])
+
+    # Initial guess for variables
+    initial_guess = []
+    for i in range(n_squares):
+        initial_guess.extend([np.random.uniform(0, 5), np.random.uniform(0, 5), 0])
+
+    # Define constraints for the optimization
+    constraints = [{
+        'type': 'ineq',  # Constraint type: g(x) >= 0
+        'fun': lambda vars: sum(
+            -overlap_area_rotated(
+                [vars[3*i], vars[3*i+1], vars[3*i+2]],
+                [vars[3*j], vars[3*j+1], vars[3*j+2]]
+            )
+            for i in range(n_squares) for j in range(i + 1, n_squares)
+        )
+    }]
+    
+    result = minimize(objective, initial_guess, method='SLSQP', bounds=bounds)
+
+    
+    optimized_squares = [result.x[i:i+3] for i in range(0, len(result.x), 3)]
+    
+    xs = []
+    ys = []
+    for x, y, theta in optimized_squares:
+        corners = rotated_square_corners(x, y, theta)
+        for x1,y1 in corners:
+            xs.append(x1)
+            ys.append(y1)
+        
+    new_obj = (max(max(xs) - min(xs),max(ys) - min(ys)))
+
+    print(result.success)
+    
+    if True and new_obj < obj:
+        print(f"found new best {str(new_obj)}")
+        obj = new_obj
+        
+
+        # Display the optimized square placements
+        for i, (x, y, theta) in enumerate(optimized_squares):
+            print(f"Square {i + 1}: Center=({x:.2f}, {y:.2f}), Rotation={theta:.2f} radians")
+
+        # Display max extent
+        max_extent_value = max_extent(optimized_squares)
+        print(f"\nMax Extent: {max_extent_value:.2f}")
+
+        from pyx import canvas, path, deco, style, color
+        import numpy as np
+
+        def draw_rotated_square(c, x, y, theta, square_color=color.rgb.blue):
+            """
+            Draw a rotated square on a PyX canvas.
+            """
+            # Define the half-side length
+            half_s = 0.5  # Fixed side length is 1
+
+            # Calculate the rotated square corners
+            corners = np.array([
+                [-half_s, -half_s],
+                [half_s, -half_s],
+                [half_s, half_s],
+                [-half_s, half_s]
+            ])
+            rotation_matrix = np.array([
+                [np.cos(theta), -np.sin(theta)],
+                [np.sin(theta), np.cos(theta)]
+            ])
+            rotated_corners = np.dot(corners, rotation_matrix) + [x, y]
+
+            # Create the PyX path for the square
+            square_path = path.path(
+                path.moveto(rotated_corners[0, 0], rotated_corners[0, 1]),
+                path.lineto(rotated_corners[1, 0], rotated_corners[1, 1]),
+                path.lineto(rotated_corners[2, 0], rotated_corners[2, 1]),
+                path.lineto(rotated_corners[3, 0], rotated_corners[3, 1]),
+                path.closepath()
+            )
+
+            # Add the square to the canvas
+            c.stroke(square_path, [style.linewidth.Thick, color.rgb.black, deco.filled([color.rgb.blue])])
+
+        # Create a PyX canvas
+        c = canvas.canvas()
+
+        # Plot each optimized square
+        for i, (x, y, theta) in enumerate(optimized_squares):
+            draw_rotated_square(c, x, y, theta)
+
+        if True:
+        # Save the visualization to a PDF file
+            c.writePDFfile(f"optimized_squares")
