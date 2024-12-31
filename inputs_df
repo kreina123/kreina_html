@@ -1,0 +1,28 @@
+import pandas as pd
+
+class ExampleClass:
+    def __init__(self, **kwargs):
+        """
+        Initializes the class with dynamic attributes.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments to set as attributes.
+        """
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def to_dataframe(self):
+        """
+        Converts the attributes of the class instance into a DataFrame.
+
+        Returns:
+            pd.DataFrame: A DataFrame with attribute names as the first column
+                          and their values as the second column.
+        """
+        data = {"Attribute": list(self.__dict__.keys()),
+                "Value": list(self.__dict__.values())}
+        return pd.DataFrame(data)
+
+# Example usage:
+example = ExampleClass(name="John Doe", age=30, occupation="Engineer")
+print(example.to_dataframe())
