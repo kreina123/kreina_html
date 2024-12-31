@@ -17,12 +17,12 @@ class ExampleClass:
 
         Returns:
             pd.DataFrame: A DataFrame with attribute names as the first column
-                          and their values as the second column.
+                          and their values as the second column. Lists are joined into strings.
         """
         data = {"Attribute": list(self.__dict__.keys()),
-                "Value": list(self.__dict__.values())}
+                "Value": [', '.join(value) if isinstance(value, list) else value for value in self.__dict__.values()]}
         return pd.DataFrame(data)
 
 # Example usage:
-example = ExampleClass(name="John Doe", age=30, occupation="Engineer")
+example = ExampleClass(name="John Doe", age=30, hobbies=["reading", "coding"], occupation="Engineer")
 print(example.to_dataframe())
