@@ -1,0 +1,62 @@
+def get_df_html(df, highlighted_rows=None, highlighted_columns=None, highlighted_cells=None):
+    """
+    Create an HTML representation of a DataFrame with customizable styles.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame to style.
+    - highlighted_rows (list, optional): List of row indices to highlight.
+    - highlighted_columns (list, optional): List of column names to highlight.
+    - highlighted_cells (list of tuples, optional): List of (row_idx, col_name) for specific cell highlights.
+
+    Returns:
+    - str: HTML representation of the styled DataFrame.
+    """
+    float_cols = df.select_dtypes(include=["float"]).columns
+    format_dict = dict(zip(list(float_cols), ["{:.2f}"] * len(float_cols)))
+
+    # Initialize styles
+    styled_df = (
+        df.style
+        .set_table_styles([], overwrite=False)
+        .set_table_attributes('style="border-collapse: collapse; width: auto;"')
+        .format(format_dict)
+        .hide_index()  # Hides the DataFrame index
+    )
+    
+    # Apply general styles
+    general_styles = [
+        {'selector': 'th', 'props': [('background-color', 'white'), 
+                                     ('font-weight', 'bold'), 
+                                     ('font-family', 'Arial, sans-serif'), 
+                                     ('border', 'none'), 
+                                     ('padding', '6px'), 
+                                     ('font-size', '12px'), 
+                                     ('text-align', 'left')]},
+        {'selector': 'thead th', 'props': [('border-bottom', '1px solid black')]},
+        {'selector': 'tr:nth-child(odd)', 'props': [('background-color', '#f2f2f2'), ('border', 'none')]},
+        {'selector': 'tr:nth-child(even)', 'props': [('background-color', 'white'), ('border', 'none')]},
+        {'selector': 'tr:hover', 'props': [('background-color', '#d9d9d9'), ('border', 'none')]},
+        {'selector': 'td', 'props': [('padding', '6px'), 
+                                     ('font-size', '12px'), 
+                                     ('border', 'none'), 
+                                     ('text-align', 'left')]},
+    ]
+    for style in general_styles:
+        styled_df = styled_df.set_table_styles([style], overwrite=False)
+
+    # Highlight rows
+    if highlighted_rows:
+        for row in highlighted_rows:
+            styled_df = styled_df.applymap(lambda _: 'background-color: yellow', subset=pd.IndexSlice[row, :])
+
+    # Highlight columns
+    if highlighted_columns:
+        for col in highlighted_columns:
+            styled_df = styled_df.applymap(lambda _: 'background-color: yellow', subset=pd.IndexSlice[:, col])
+
+    # Highlight specific cells using row indices and column names
+    if highlighted_cells:
+        for row, col_name in highlighted_cells:
+            styled_df = styled_df.applymap(lambda _: 'background-color: orange', subset=pd.IndexSlice[row, col_name])
+
+    return styled_df.to_html()
