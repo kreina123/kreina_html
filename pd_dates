@@ -1,0 +1,23 @@
+import pandas as pd
+
+# Example DataFrame
+data = {
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'date_of_birth': ['1990-01-15', '1985-06-23', '1992-12-04'],
+    'registration_date': ['2022-09-01', '2023-01-15', '2021-03-10'],
+    'score': [85, 90, 88]
+}
+
+df = pd.DataFrame(data)
+
+# Identify columns that can be converted to datetime
+date_cols = [
+    col for col in df.columns 
+    if pd.to_datetime(df[col], errors='coerce').notna().all()
+]
+
+# Convert date columns to datetime format and reformat them
+df[date_cols] = df[date_cols].apply(pd.to_datetime)
+df[date_cols] = df[date_cols].apply(lambda col: col.dt.strftime('%m-%d-%y'))
+
+print(df)
