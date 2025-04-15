@@ -19,3 +19,186 @@ title.text = "My Custom Slide"
 content.text = "Using my custom PowerPoint template in Python."
 
 prs.save("output_from_template.pptx")
+
+#### One Slide
+
+from copy import deepcopy
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+import pandas as pd
+
+def clone_slide(prs, slide_index):
+    source = prs.slides[slide_index]
+    blank_slide_layout = prs.slide_layouts[6]
+    new_slide = prs.slides.add_slide(blank_slide_layout)
+
+    for shape in source.shapes:
+        el = shape.element
+        new_el = deepcopy(el)
+        new_slide.shapes._spTree.insert_element_before(new_el, 'p:extLst')
+    return new_slide
+
+# Load the presentation with the logo
+prs = Presentation("Goldman_Table_Slide.pptx")
+
+# Clone the first slide (assumed to contain the logo)
+slide = clone_slide(prs, 0)
+
+# Loop through the existing shapes and adjust the positioning of the title and table
+for shape in slide.shapes:
+    if shape.has_text_frame:
+        text = shape.text_frame.text.lower()
+
+        # Remove "Subheading" text box if it exists
+        if "subheading" in text:
+            sp = shape.element
+            slide.shapes._spTree.remove(sp)
+
+        # Modify the existing "Spending Summary" text box position if necessary
+        if "spending summary" in text:
+            # Adjust the position of the title without creating new text
+            shape.left = Inches(0.5)  # X position of the title
+            shape.top = Inches(1.2)   # Adjust Y position to avoid overlap with logo
+            shape.width = Inches(9)   # Ensure the width stays consistent
+            shape.height = Inches(0.5)  # Adjust the height if necessary
+
+            # Update the font size and color as needed
+            p = shape.text_frame.paragraphs[0]
+            p.font.size = Pt(32)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(106, 168, 79)
+
+# Sample DataFrame
+df = pd.DataFrame({
+    "in millions": ["Lorem ipsum", "Sit amet con", "Consectetuer",
+                    "Lorem ipsum", "Sit amet con", "Consectetuer",
+                    "Lorem ipsum", "Sit amet con", "Consectetuer"],
+    "2010": ["$30,000"] * 9,
+    "2011": ["$30,000"] * 9,
+    "2012": ["$30,000"] * 9
+})
+
+# Add the table to the slide (below the title)
+rows, cols = df.shape
+table_shape = slide.shapes.add_table(rows + 1, cols, Inches(0.5), Inches(1.8), Inches(9), Inches(4.5))  # Halved the Y position
+table = table_shape.table
+
+# Table header
+for col_idx, col_name in enumerate(df.columns):
+    cell = table.cell(0, col_idx)
+    cell.text = col_name
+    para = cell.text_frame.paragraphs[0]
+    para.font.bold = True
+    para.font.size = Pt(12)
+    cell.fill.solid()
+    cell.fill.fore_color.rgb = RGBColor(220, 230, 242)
+
+# Table data
+for i, row in df.iterrows():
+    for j, val in enumerate(row):
+        cell = table.cell(i + 1, j)
+        cell.text = str(val)
+        para = cell.text_frame.paragraphs[0]
+        para.font.size = Pt(12)
+        if i == len(df) - 2:
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = RGBColor(255, 230, 128)
+
+# Save the final version
+prs.save("Spending_Summary_With_Logo.pptx")
+
+### Multiple
+
+from copy import deepcopy
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+import pandas as pd
+
+def clone_slide(prs, slide_index):
+    source = prs.slides[slide_index]
+    blank_slide_layout = prs.slide_layouts[6]
+    new_slide = prs.slides.add_slide(blank_slide_layout)
+
+    for shape in source.shapes:
+        el = shape.element
+        new_el = deepcopy(el)
+        new_slide.shapes._spTree.insert_element_before(new_el, 'p:extLst')
+    return new_slide
+
+# Load the presentation with the logo
+prs = Presentation("Goldman_Table_Slide.pptx")
+
+# Clone the first slide (assumed to contain the logo)
+slide = clone_slide(prs, 0)
+
+# Loop through the existing shapes and adjust the positioning of the title and table
+for shape in slide.shapes:
+    if shape.has_text_frame:
+        text = shape.text_frame.text.lower()
+
+        # Remove "Subheading" text box if it exists
+        if "subheading" in text:
+            sp = shape.element
+            slide.shapes._spTree.remove(sp)
+
+        # Modify the existing "Spending Summary" text box position if necessary
+        if "spending summary" in text:
+            # Adjust the position of the title without creating new text
+            shape.left = Inches(0.5)  # X position of the title
+            shape.top = Inches(1.2)   # Adjust Y position to avoid overlap with logo
+            shape.width = Inches(9)   # Ensure the width stays consistent
+            shape.height = Inches(0.5)  # Adjust the height if necessary
+
+            # Update the font size and color as needed
+            p = shape.text_frame.paragraphs[0]
+            p.font.size = Pt(32)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(106, 168, 79)
+
+# Sample DataFrame
+df = pd.DataFrame({
+    "in millions": ["Lorem ipsum", "Sit amet con", "Consectetuer",
+                    "Lorem ipsum", "Sit amet con", "Consectetuer",
+                    "Lorem ipsum", "Sit amet con", "Consectetuer"],
+    "2010": ["$30,000"] * 9,
+    "2011": ["$30,000"] * 9,
+    "2012": ["$30,000"] * 9
+})
+
+# Function to add a table to the slide
+def add_table_to_slide(slide, df, left, top, width, height):
+    rows, cols = df.shape
+    table_shape = slide.shapes.add_table(rows + 1, cols, left, top, width, height)
+    table = table_shape.table
+
+    # Table header
+    for col_idx, col_name in enumerate(df.columns):
+        cell = table.cell(0, col_idx)
+        cell.text = col_name
+        para = cell.text_frame.paragraphs[0]
+        para.font.bold = True
+        para.font.size = Pt(12)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = RGBColor(220, 230, 242)
+
+    # Table data
+    for i, row in df.iterrows():
+        for j, val in enumerate(row):
+            cell = table.cell(i + 1, j)
+            cell.text = str(val)
+            para = cell.text_frame.paragraphs[0]
+            para.font.size = Pt(12)
+            if i == len(df) - 2:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = RGBColor(255, 230, 128)
+
+# Add 4 small tables to the slide, each in a different position
+add_table_to_slide(slide, df, Inches(0.5), Inches(2), Inches(4), Inches(2))
+add_table_to_slide(slide, df, Inches(4.5), Inches(2), Inches(4), Inches(2))
+add_table_to_slide(slide, df, Inches(0.5), Inches(4.5), Inches(4), Inches(2))
+add_table_to_slide(slide, df, Inches(4.5), Inches(4.5), Inches(4), Inches(2))
+
+# Save the final version
+prs.save("Spending_Summary_Four_Tables.pptx")
