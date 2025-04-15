@@ -1,0 +1,21 @@
+from pptx import Presentation
+
+# Load your custom .pptx template
+prs = Presentation("your_template.pptx")
+
+# Print available slide layouts
+for i, layout in enumerate(prs.slide_layouts):
+    print(f"{i}: {layout.name}")
+
+# Choose a layout (e.g., Title and Content)
+slide_layout = prs.slide_layouts[1]
+slide = prs.slides.add_slide(slide_layout)
+
+# Set title and content
+title = slide.shapes.title
+content = slide.placeholders[1]
+
+title.text = "My Custom Slide"
+content.text = "Using my custom PowerPoint template in Python."
+
+prs.save("output_from_template.pptx")
