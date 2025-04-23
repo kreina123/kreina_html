@@ -1,0 +1,103 @@
+import base64
+from io import BytesIO
+from openpyxl import Workbook
+import pandas as pd
+
+# Sample DataFrame (can be replaced with any data source)
+df = pd.DataFrame({
+    'Name': ['Alice', 'Bob', 'Charlie'],
+    'Score': [90, 85, 88]
+})
+
+# Create Excel file with openpyxl
+wb = Workbook()
+ws = wb.active
+ws.title = "Sheet1"
+
+# Add headers
+ws.append(list(df.columns))
+
+# Add data rows
+for _, row in df.iterrows():
+    ws.append(row.tolist())
+
+# Save to in-memory buffer
+excel_buffer = BytesIO()
+wb.save(excel_buffer)
+excel_buffer.seek(0)
+
+# Encode to base64
+excel_base64 = base64.b64encode(excel_buffer.read()).decode()
+
+# Clean SVG icon with no artifacts
+svg_icon = """
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
+    <path d="M12 5v14" />
+    <path d="M19 12l-7 7-7-7" />
+</svg>
+"""
+
+# HTML content with embedded Excel and styled button
+html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Styled Excel Download</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }}
+        .download-btn {{
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #4CAF50, #2e7d32);
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 999px;
+            text-decoration: none;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+            transition: background 0.3s ease, transform 0.2s ease;
+        }}
+        .download-btn:hover {{
+            background: linear-gradient(135deg, #43a047, #1b5e20);
+            transform: translateY(-2px);
+        }}
+        .download-btn svg {{
+            display: inline-block;
+            vertical-align: middle;
+        }}
+        h2 {{
+            margin-bottom: 20px;
+            color: #333;
+        }}
+    </style>
+</head>
+<body>
+    <h2>Download Embedded Excel</h2>
+    <a download="data.xlsx"
+       href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_base64}"
+       class="download-btn">
+       {svg_icon}
+       Download Excel
+    </a>
+</body>
+</html>
+"""
+
+# Save HTML to file
+with open("styled_embedded_excel.html", "w") as f:
+    f.write(html_content)
