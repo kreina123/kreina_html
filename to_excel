@@ -82,3 +82,15 @@ else:
 wb = Workbook()
 wb.save(file_path)
 print(f"New workbook created: {file_path}")
+
+
+# Autofit all columns
+for col in ws.columns:
+    max_length = 0
+    col_letter = get_column_letter(col[0].column)
+    for cell in col:
+        if cell.value is not None:
+            # convert value to string and check length
+            max_length = max(max_length, len(str(cell.value)))
+    # Set column width with some padding
+    ws.column_dimensions[col_letter].width = max_length + 2
