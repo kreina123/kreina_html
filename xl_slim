@@ -1,0 +1,17 @@
+import inspect
+from functools import wraps
+
+def with_defaults(func):
+    sig = inspect.signature(func)
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        bound = sig.bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        return func(*bound.args, **bound.kwargs)
+
+    return wrapper
+
+@with_defaults
+def myfunc(x, y=5, z="hello"):
+    return f"x={x}, y={y}, z={z}"
