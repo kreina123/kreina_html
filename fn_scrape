@@ -1,0 +1,38 @@
+import requests
+import pandas as pd
+
+# Collateral API endpoint
+url = "https://fanniemae.mbs-securities.com/api/security/FNM/3140W1VA8/collateral"
+params = {"recordType": "CURRENT"}
+
+# Headers help you mimic a browser and avoid being blocked
+headers = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Referer": "https://fanniemae.mbs-securities.com/fannie/details/3140W1VA8",
+}
+
+# Make the request
+resp = requests.get(url, headers=headers, params=params)
+resp.raise_for_status()
+
+# Parse JSON
+data = resp.json()
+
+# The payload usually lives under "data" or "rows" — inspect to confirm
+# You can print keys to see structure:
+print(data.keys())
+
+# Example extraction (adjust depending on structure)
+if "data" in data:
+    df = pd.DataFrame(data["data"])
+elif "rows" in data:
+    df = pd.DataFrame(data["rows"])
+else:
+    df = pd.DataFrame(data)
+
+# Display first few rows
+print(df.head())
+
+# Optional: export
+# df.to_csv("collateral_3140W1VA8.csv", index=False)
