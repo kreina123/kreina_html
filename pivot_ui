@@ -1,0 +1,806 @@
+import pandas as pd
+import json
+
+def create_pivot_html(df, output_file='pivot_table.html', 
+                      pivot_cols=None, 
+                      value_cols=None, 
+                      default_pivots=None, 
+                      default_values=None,
+                      formatting=None):
+    """
+    Create an interactive HTML pivot table with expandable/collapsible groups.
+    
+    Parameters:
+    - df: pandas DataFrame
+    - output_file: name of the output HTML file
+    - pivot_cols: list of columns available for pivoting (defaults to all non-numeric)
+    - value_cols: list of columns available as values (defaults to all numeric)
+    - default_pivots: list of columns to pivot by default (ordered)
+    - default_values: list of value columns selected by default
+    - formatting: dict mapping column names to format types
+                 Options: 'currency', 'percent', 'number', 'decimal1', 'decimal2'
+                 Example: {'PnL': 'currency', 'Growth': 'percent', 'Count': 'number'}
+    """
+    
+    # Identify column types
+    all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+    
+    # Set pivot columns (which columns can be used for grouping)
+    if pivot_cols is None:
+        pivot_cols = all_non_numeric_cols
+    elif isinstance(pivot_cols, str):
+        pivot_cols = [pivot_cols]
+    
+    # Set value columns (which columns can be aggregated)
+    if value_cols is None:
+        value_cols = all_numeric_cols
+    elif isinstance(value_cols, str):
+        value_cols = [value_cols]
+    
+    # Set defaults
+    if default_pivots is None and pivot_cols:
+        default_pivots = [pivot_cols[0]]
+    elif default_pivots is None:
+        default_pivots = []
+    elif isinstance(default_pivots, str):
+        default_pivots = [default_pivots]
+        
+    if default_values is None:
+        default_values = value_cols
+    elif isinstance(default_values, str):
+        default_values = [default_values]
+    
+    # Set formatting defaults
+    if formatting is None:
+        formatting = {}
+    
+    # Convert DataFrame to JSON for JavaScript
+    df_json = df.to_json(orient='records')
+    formatting_json = json.dumps(formatting)
+    
+    # Build pivot options HTML
+    pivot_options = '\n'.join([
+        f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
+        for col in pivot_cols
+    ])
+    
+    # Build value options HTML
+    value_options = '\n'.join([
+        f'<option value="{col}" {"selected" if col in default_values else ""}>{col}</option>' 
+        for col in value_cols
+    ])
+    
+    html_content = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agency PnL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            padding: 30px;
+            color: #2c3e50;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .download-btn {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .download-btn.secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+        }
+        
+        .download-btn.secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .controls {
+            padding: 24px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        label {
+            font-weight: 600;
+            font-size: 13px;
+            color: #495057;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .select-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+        }
+        
+        select {
+            padding: 10px 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            flex: 1;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        select[multiple] {
+            min-height: 100px;
+        }
+        
+        .order-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .order-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .order-btn:hover {
+            background: #5568d3;
+        }
+        
+        .order-btn:disabled {
+            background: #ced4da;
+            cursor: not-allowed;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .table-wrapper {
+            padding: 30px;
+            overflow-x: auto;
+        }
+        
+        .pivot-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 13px;
+        }
+        
+        .pivot-table th {
+            background: #495057;
+            color: white;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid #343a40;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .pivot-table th.value-header {
+            text-align: right;
+        }
+        
+        .pivot-table td {
+            padding: 10px 16px;
+            border-bottom: 1px solid #e9ecef;
+            background: white;
+        }
+        
+        .group-row {
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s;
+        }
+        
+        .group-row:hover {
+            background: #f1f3f5 !important;
+        }
+        
+        .group-row td {
+            font-weight: 500;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .detail-row {
+            background: white;
+        }
+        
+        .detail-row:hover {
+            background: #f8f9fa;
+        }
+        
+        .detail-row.hidden {
+            display: none;
+        }
+        
+        .toggle-icon {
+            display: inline-block;
+            width: 14px;
+            margin-right: 8px;
+            font-size: 10px;
+            transition: transform 0.2s;
+            color: #667eea;
+        }
+        
+        .group-row.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+        
+        .value-cell {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        
+        .indent-1 { padding-left: 32px !important; }
+        .indent-2 { padding-left: 56px !important; }
+        .indent-3 { padding-left: 80px !important; }
+        .indent-4 { padding-left: 104px !important; }
+        
+        .level-0 { 
+            font-weight: 600;
+            background: #e9ecef !important;
+        }
+        .level-1 { 
+            font-weight: 500;
+            background: #f1f3f5 !important;
+        }
+        
+        .grand-total {
+            background: #495057 !important;
+            color: white !important;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        .grand-total td {
+            background: #495057 !important;
+            color: white !important;
+            border-top: 3px solid #343a40;
+        }
+        
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Agency PnL</h1>
+            <div class="button-group">
+                <button class="download-btn secondary" onclick="downloadFullData()">Download Full Data</button>
+                <button class="download-btn" onclick="downloadView()">Download Current View</button>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="groupBy">Pivots</label>
+                <div class="select-wrapper">
+                    <select id="groupBy" multiple>
+                        ''' + pivot_options + '''
+                    </select>
+                    <div class="order-buttons">
+                        <button class="order-btn" onclick="movePivotUp()">▲ Up</button>
+                        <button class="order-btn" onclick="movePivotDown()">▼ Down</button>
+                    </div>
+                </div>
+                <div class="help-text">Hold Ctrl/Cmd to select multiple • Order matters for hierarchy</div>
+            </div>
+            
+            <div class="control-group">
+                <label for="valueCols">Values</label>
+                <select id="valueCols" multiple>
+                    ''' + value_options + '''
+                </select>
+                <div class="help-text">Hold Ctrl/Cmd to select multiple</div>
+            </div>
+        </div>
+        
+        <div class="table-wrapper">
+            <div id="tableContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        const data = ''' + df_json + ''';
+        const formatting = ''' + formatting_json + ''';
+        let expandedGroups = new Set();
+        
+        function movePivotUp() {
+            const select = document.getElementById('groupBy');
+            const selected = Array.from(select.selectedOptions);
+            
+            if (selected.length !== 1) {
+                alert('Please select exactly one pivot to move');
+                return;
+            }
+            
+            const option = selected[0];
+            const prevOption = option.previousElementSibling;
+            
+            if (prevOption) {
+                select.insertBefore(option, prevOption);
+                expandedGroups.clear();
+                renderPivotTable();
+            }
+        }
+        
+        function movePivotDown() {
+            const select = document.getElementById('groupBy');
+            const selected = Array.from(select.selectedOptions);
+            
+            if (selected.length !== 1) {
+                alert('Please select exactly one pivot to move');
+                return;
+            }
+            
+            const option = selected[0];
+            const nextOption = option.nextElementSibling;
+            
+            if (nextOption) {
+                select.insertBefore(nextOption, option);
+                expandedGroups.clear();
+                renderPivotTable();
+            }
+        }
+        
+        function renderPivotTable() {
+            const groupBySelect = document.getElementById('groupBy');
+            const groupByCols = Array.from(groupBySelect.options)
+                .filter(opt => opt.selected)
+                .map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+            
+            if (groupByCols.length === 0) {
+                document.getElementById('tableContainer').innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one pivot.</p>';
+                return;
+            }
+            
+            if (valueCols.length === 0) {
+                document.getElementById('tableContainer').innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one value column.</p>';
+                return;
+            }
+            
+            const tree = buildTree(data, groupByCols, 0);
+            
+            let html = '<table class="pivot-table" id="pivotTable">';
+            html += '<thead><tr>';
+            html += `<th>${groupByCols.join(' / ')}</th>`;
+            valueCols.forEach(col => {
+                html += `<th class="value-header">${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            html += renderTree(tree, groupByCols, valueCols, 0, '');
+            
+            html += '<tr class="grand-total">';
+            html += '<td>Grand Total</td>';
+            valueCols.forEach(col => {
+                const grandTotal = data.reduce((sum, row) => sum + (parseFloat(row[col]) || 0), 0);
+                html += `<td class="value-cell">${formatValue(grandTotal, col)}</td>`;
+            });
+            html += '</tr>';
+            
+            html += '</tbody></table>';
+            
+            document.getElementById('tableContainer').innerHTML = html;
+            
+            document.querySelectorAll('.group-row').forEach(row => {
+                row.addEventListener('click', toggleGroup);
+            });
+        }
+        
+        function buildTree(rows, groupCols, level) {
+            if (level >= groupCols.length) {
+                return rows;
+            }
+            
+            const col = groupCols[level];
+            const groups = {};
+            
+            rows.forEach(row => {
+                const key = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
+                if (!groups[key]) {
+                    groups[key] = [];
+                }
+                groups[key].push(row);
+            });
+            
+            const result = {};
+            Object.keys(groups).sort().forEach(key => {
+                result[key] = buildTree(groups[key], groupCols, level + 1);
+            });
+            
+            return result;
+        }
+        
+        function renderTree(node, groupCols, valueCols, level, parentPath) {
+            let html = '';
+            
+            if (Array.isArray(node)) {
+                node.forEach((row, idx) => {
+                    html += `<tr class="detail-row" data-parent="${parentPath}">`;
+                    html += `<td class="indent-${Math.min(level, 4)}"></td>`;
+                    valueCols.forEach(col => {
+                        const val = row[col];
+                        const formatted = formatValue(val, col);
+                        const colorClass = val < 0 ? 'negative' : (val > 0 ? 'positive' : '');
+                        html += `<td class="value-cell ${colorClass}">${formatted}</td>`;
+                    });
+                    html += '</tr>';
+                });
+            } else {
+                Object.keys(node).forEach(key => {
+                    const groupPath = parentPath ? `${parentPath}-${key}` : key;
+                    const isExpanded = expandedGroups.has(groupPath);
+                    const children = node[key];
+                    const flatChildren = flattenTree(children);
+                    
+                    html += `<tr class="group-row level-${level} ${isExpanded ? '' : 'collapsed'}" data-path="${groupPath}">`;
+                    html += `<td class="indent-${Math.min(level, 4)}"><span class="toggle-icon">▼</span>${key}</td>`;
+                    
+                    valueCols.forEach(col => {
+                        const sum = flatChildren.reduce((acc, row) => acc + (parseFloat(row[col]) || 0), 0);
+                        const formatted = formatValue(sum, col);
+                        const colorClass = sum < 0 ? 'negative' : (sum > 0 ? 'positive' : '');
+                        html += `<td class="value-cell ${colorClass}">${formatted}</td>`;
+                    });
+                    html += '</tr>';
+                    
+                    html += renderTree(children, groupCols, valueCols, level + 1, groupPath);
+                });
+            }
+            
+            return html;
+        }
+        
+        function flattenTree(node) {
+            if (Array.isArray(node)) {
+                return node;
+            }
+            
+            let result = [];
+            Object.values(node).forEach(child => {
+                result = result.concat(flattenTree(child));
+            });
+            return result;
+        }
+        
+        function toggleGroup(e) {
+            const groupRow = e.currentTarget;
+            const path = groupRow.dataset.path;
+            
+            if (expandedGroups.has(path)) {
+                expandedGroups.delete(path);
+            } else {
+                expandedGroups.add(path);
+            }
+            
+            groupRow.classList.toggle('collapsed');
+            
+            const allRows = Array.from(document.querySelectorAll('tr[data-parent^="' + path + '"], tr[data-path^="' + path + '-"]'));
+            allRows.forEach(row => {
+                if (row.classList.contains('detail-row')) {
+                    row.classList.toggle('hidden');
+                } else if (row.classList.contains('group-row')) {
+                    const rowPath = row.dataset.path;
+                    if (rowPath.startsWith(path + '-')) {
+                        row.classList.toggle('hidden');
+                    }
+                }
+            });
+        }
+        
+        function formatValue(val, colName) {
+            if (val === null || val === undefined || isNaN(val)) return '';
+            
+            const fmt = formatting[colName];
+            let formatted = '';
+            
+            if (fmt === 'currency') {
+                formatted = '$' + new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(Math.round(val));
+            } else if (fmt === 'percent') {
+                formatted = new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(val) + '%';
+            } else if (fmt === 'number') {
+                formatted = new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(val);
+            } else if (fmt === 'decimal1') {
+                formatted = new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1
+                }).format(val);
+            } else if (fmt === 'decimal2') {
+                formatted = new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(val);
+            } else {
+                formatted = new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(val);
+            }
+            
+            return formatted;
+        }
+        
+        function downloadView() {
+            const table = document.getElementById('pivotTable');
+            if (!table) return;
+            
+            const groupBySelect = document.getElementById('groupBy');
+            const groupByCols = Array.from(groupBySelect.options)
+                .filter(opt => opt.selected)
+                .map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+            
+            const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => {
+                return !row.classList.contains('hidden') && window.getComputedStyle(row).display !== 'none';
+            });
+            
+            let csv = [];
+            
+            let header = [];
+            groupByCols.forEach(col => {
+                header.push(`"${col}"`);
+            });
+            valueCols.forEach(col => {
+                header.push(`"${col}"`);
+            });
+            csv.push(header.join(','));
+            
+            rows.forEach(row => {
+                if (row.classList.contains('grand-total')) {
+                    let rowData = [];
+                    for (let i = 0; i < groupByCols.length; i++) {
+                        rowData.push(i === 0 ? '"Grand Total"' : '""');
+                    }
+                    const valueCells = Array.from(row.querySelectorAll('td')).slice(1);
+                    valueCells.forEach(cell => {
+                        let text = cell.textContent.trim();
+                        text = text.replace(/"/g, '""');
+                        rowData.push(`"${text}"`);
+                    });
+                    csv.push(rowData.join(','));
+                } else if (row.classList.contains('group-row')) {
+                    const path = row.dataset.path;
+                    const pathParts = path ? path.split('-') : [];
+                    const level = pathParts.length - 1;
+                    
+                    let rowData = [];
+                    
+                    for (let i = 0; i < groupByCols.length; i++) {
+                        if (i <= level) {
+                            let text = pathParts[i] || '';
+                            text = text.replace(/"/g, '""');
+                            rowData.push(`"${text}"`);
+                        } else {
+                            rowData.push('""');
+                        }
+                    }
+                    
+                    const valueCells = Array.from(row.querySelectorAll('td')).slice(1);
+                    valueCells.forEach(cell => {
+                        let text = cell.textContent.trim();
+                        text = text.replace(/"/g, '""');
+                        rowData.push(`"${text}"`);
+                    });
+                    
+                    csv.push(rowData.join(','));
+                } else if (row.classList.contains('detail-row')) {
+                    const parentPath = row.dataset.parent;
+                    const pathParts = parentPath ? parentPath.split('-') : [];
+                    
+                    let rowData = [];
+                    
+                    for (let i = 0; i < groupByCols.length; i++) {
+                        if (i < pathParts.length) {
+                            let text = pathParts[i];
+                            text = text.replace(/"/g, '""');
+                            rowData.push(`"${text}"`);
+                        } else {
+                            rowData.push('""');
+                        }
+                    }
+                    
+                    const valueCells = Array.from(row.querySelectorAll('td')).slice(1);
+                    valueCells.forEach(cell => {
+                        let text = cell.textContent.trim();
+                        text = text.replace(/"/g, '""');
+                        rowData.push(`"${text}"`);
+                    });
+                    
+                    csv.push(rowData.join(','));
+                }
+            });
+            
+            const csvContent = csv.join('\\n');
+            downloadCSV(csvContent, 'agency_pnl_view_' + new Date().toISOString().split('T')[0] + '.csv');
+        }
+        
+        function downloadFullData() {
+            const valueColsSelect = document.getElementById('valueCols');
+            const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+            
+            if (valueCols.length === 0) {
+                alert('Please select at least one value column');
+                return;
+            }
+            
+            const allCols = Object.keys(data[0] || {});
+            
+            let csv = [];
+            
+            csv.push(allCols.map(col => `"${col}"`).join(','));
+            
+            data.forEach(row => {
+                const rowData = allCols.map(col => {
+                    let val = row[col];
+                    if (val === null || val === undefined) val = '';
+                    val = String(val).replace(/"/g, '""');
+                    return `"${val}"`;
+                });
+                csv.push(rowData.join(','));
+            });
+            
+            const csvContent = csv.join('\\n');
+            downloadCSV(csvContent, 'agency_pnl_full_data_' + new Date().toISOString().split('T')[0] + '.csv');
+        }
+        
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        document.getElementById('groupBy').addEventListener('change', () => {
+            expandedGroups.clear();
+            renderPivotTable();
+        });
+        document.getElementById('valueCols').addEventListener('change', renderPivotTable);
+        
+        renderPivotTable();
+    </script>
+</body>
+</html>
+'''
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"Pivot table saved to {output_file}")
+
+
+# Example usage:
+if __name__ == "__main__":
+    # Sample data with PnL column
+    sample_data = pd.DataFrame({
+        'Region': ['East', 'East', 'West', 'West', 'East', 'West', 'North', 'North'],
+        'Product': ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B'],
+        'Category': ['Electronics', 'Electronics', 'Electronics', 'Furniture', 'Furniture', 'Furniture', 'Electronics', 'Furniture'],
+        'Sales': [100000, 150000, 200000, 120000, 180000, 140000, 90000, 110000],
+        'Quantity': [10, 15, 20, 12, 18, 14, 9, 11],
+        'Profit': [30000, 45000, 60000, 36000, 54000, 42000, 27000, 33000],
+        'PnL': [-25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000],
+        'Growth': [5.5, 8.2, 12.0, 6.5, 9.8, 7.0, 4.0, 6.0],
+        'Margin': [0.255, 0.382, 0.520, 0.285, 0.458, 0.350, 0.220, 0.280]
+    })
+    
+    create_pivot_html(
+        sample_data, 
+        output_file='pivot_table.html',
+        pivot_cols=['Region', 'Product', 'Category'],
+        value_cols=['Sales', 'PnL', 'Growth', 'Margin'],
+        default_pivots=['Region', 'Product'],
+        default_values=['Sales', 'PnL'],
+        formatting={
+            'Sales': 'currency',
+            'PnL': 'currency',
+            'Growth': 'percent',
+            'Margin': 'decimal2',
+            'Quantity': 'number',
+            'Profit': 'decimal1'
+        }
+    )
