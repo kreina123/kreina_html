@@ -26,13 +26,13 @@ def create_pivot_html(df, output_file='pivot_table.html',
     all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
     all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
     
-    # Set pivot columns (which columns can be used for grouping)
+    # Set pivot columns
     if pivot_cols is None:
         pivot_cols = all_non_numeric_cols
     elif isinstance(pivot_cols, str):
         pivot_cols = [pivot_cols]
     
-    # Set value columns (which columns can be aggregated)
+    # Set value columns
     if value_cols is None:
         value_cols = all_numeric_cols
     elif isinstance(value_cols, str):
@@ -55,24 +55,22 @@ def create_pivot_html(df, output_file='pivot_table.html',
     if formatting is None:
         formatting = {}
     
-    # Convert DataFrame to JSON for JavaScript
+    # Convert to JSON
     df_json = df.to_json(orient='records')
     formatting_json = json.dumps(formatting)
     
-    # Build pivot options HTML
+    # Build options
     pivot_options = '\n'.join([
         f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
         for col in pivot_cols
     ])
     
-    # Build value options HTML
     value_options = '\n'.join([
         f'<option value="{col}" {"selected" if col in default_values else ""}>{col}</option>' 
         for col in value_cols
     ])
     
-    html_content = '''
-<!DOCTYPE html>
+    html_content = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -220,11 +218,6 @@ def create_pivot_html(df, output_file='pivot_table.html',
             background: #5568d3;
         }
         
-        .order-btn:disabled {
-            background: #ced4da;
-            cursor: not-allowed;
-        }
-        
         .help-text {
             font-size: 12px;
             color: #6c757d;
@@ -284,15 +277,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
             border-bottom: 1px solid #dee2e6;
         }
         
-        .detail-row {
-            background: white;
-        }
-        
-        .detail-row:hover {
-            background: #f8f9fa;
-        }
-        
-        .detail-row.hidden {
+        .group-row.hidden {
             display: none;
         }
         
@@ -315,6 +300,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
             font-family: 'Consolas', 'Monaco', monospace;
         }
         
+        .indent-0 { padding-left: 16px !important; }
         .indent-1 { padding-left: 32px !important; }
         .indent-2 { padding-left: 56px !important; }
         .indent-3 { padding-left: 80px !important; }
@@ -388,7 +374,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
     <script>
         const data = ''' + df_json + ''';
         const formatting = ''' + formatting_json + ''';
-        let expandedGroups = new Set();
+        const collapsedGroups = new Set();
         
         function movePivotUp() {
             const select = document.getElementById('groupBy');
@@ -400,11 +386,11 @@ def create_pivot_html(df, output_file='pivot_table.html',
             }
             
             const option = selected[0];
-            const prevOption = option.previousElementSibling;
+            const nextOption = option.nextElementSibling;
             
-            if (prevOption) {
-                select.insertBefore(option, prevOption);
-                expandedGroups.clear();
+            if (nextOption) {
+                select.insertBefore(nextOption, option);
+                collapsedGroups.clear();
                 renderPivotTable();
             }
         }
@@ -419,11 +405,11 @@ def create_pivot_html(df, output_file='pivot_table.html',
             }
             
             const option = selected[0];
-            const nextOption = option.nextElementSibling;
+            const prevOption = option.previousElementSibling;
             
-            if (nextOption) {
-                select.insertBefore(nextOption, option);
-                expandedGroups.clear();
+            if (prevOption) {
+                select.insertBefore(option, prevOption);
+                collapsedGroups.clear();
                 renderPivotTable();
             }
         }
@@ -471,7 +457,11 @@ def create_pivot_html(df, output_file='pivot_table.html',
             document.getElementById('tableContainer').innerHTML = html;
             
             document.querySelectorAll('.group-row').forEach(row => {
-                row.addEventListener('click', toggleGroup);
+                row.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const path = this.getAttribute('data-path');
+                    toggleGroup(path);
+                });
             });
         }
         
@@ -503,40 +493,70 @@ def create_pivot_html(df, output_file='pivot_table.html',
             let html = '';
             
             if (Array.isArray(node)) {
-                node.forEach((row, idx) => {
-                    html += `<tr class="detail-row" data-parent="${parentPath}">`;
-                    html += `<td class="indent-${Math.min(level, 4)}"></td>`;
-                    valueCols.forEach(col => {
-                        const val = row[col];
-                        const formatted = formatValue(val, col);
-                        const colorClass = val < 0 ? 'negative' : (val > 0 ? 'positive' : '');
-                        html += `<td class="value-cell ${colorClass}">${formatted}</td>`;
-                    });
-                    html += '</tr>';
-                });
-            } else {
-                Object.keys(node).forEach(key => {
-                    const groupPath = parentPath ? `${parentPath}-${key}` : key;
-                    const isExpanded = expandedGroups.has(groupPath);
-                    const children = node[key];
-                    const flatChildren = flattenTree(children);
-                    
-                    html += `<tr class="group-row level-${level} ${isExpanded ? '' : 'collapsed'}" data-path="${groupPath}">`;
-                    html += `<td class="indent-${Math.min(level, 4)}"><span class="toggle-icon">▼</span>${key}</td>`;
-                    
-                    valueCols.forEach(col => {
-                        const sum = flatChildren.reduce((acc, row) => acc + (parseFloat(row[col]) || 0), 0);
-                        const formatted = formatValue(sum, col);
-                        const colorClass = sum < 0 ? 'negative' : (sum > 0 ? 'positive' : '');
-                        html += `<td class="value-cell ${colorClass}">${formatted}</td>`;
-                    });
-                    html += '</tr>';
-                    
-                    html += renderTree(children, groupCols, valueCols, level + 1, groupPath);
-                });
+                return html;
             }
             
+            Object.keys(node).forEach(key => {
+                const groupPath = parentPath ? `${parentPath}>${key}` : key;
+                const isCollapsed = collapsedGroups.has(groupPath);
+                const children = node[key];
+                const flatChildren = flattenTree(children);
+                
+                html += `<tr class="group-row level-${level} ${isCollapsed ? 'collapsed' : ''}" data-path="${groupPath}" data-level="${level}">`;
+                html += `<td class="indent-${level}"><span class="toggle-icon">▼</span>${key}</td>`;
+                
+                valueCols.forEach(col => {
+                    const sum = flatChildren.reduce((acc, row) => acc + (parseFloat(row[col]) || 0), 0);
+                    const formatted = formatValue(sum, col);
+                    const colorClass = sum < 0 ? 'negative' : (sum > 0 ? 'positive' : '');
+                    html += `<td class="value-cell ${colorClass}">${formatted}</td>`;
+                });
+                html += '</tr>';
+                
+                if (!Array.isArray(children)) {
+                    html += renderTree(children, groupCols, valueCols, level + 1, groupPath);
+                }
+            });
+            
             return html;
+        }
+        
+        function toggleGroup(path) {
+            if (collapsedGroups.has(path)) {
+                collapsedGroups.delete(path);
+            } else {
+                collapsedGroups.add(path);
+            }
+            
+            const clickedRow = document.querySelector(`[data-path="${path}"]`);
+            if (clickedRow) {
+                clickedRow.classList.toggle('collapsed');
+            }
+            
+            const allRows = document.querySelectorAll('.group-row');
+            allRows.forEach(row => {
+                const rowPath = row.getAttribute('data-path');
+                
+                if (rowPath.startsWith(path + '>')) {
+                    const pathSegments = rowPath.split('>');
+                    const clickedPathSegments = path.split('>');
+                    
+                    let shouldBeVisible = true;
+                    for (let i = 0; i <= clickedPathSegments.length; i++) {
+                        const ancestorPath = pathSegments.slice(0, i + 1).join('>');
+                        if (collapsedGroups.has(ancestorPath)) {
+                            shouldBeVisible = false;
+                            break;
+                        }
+                    }
+                    
+                    if (shouldBeVisible) {
+                        row.classList.remove('hidden');
+                    } else {
+                        row.classList.add('hidden');
+                    }
+                }
+            });
         }
         
         function flattenTree(node) {
@@ -549,31 +569,6 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 result = result.concat(flattenTree(child));
             });
             return result;
-        }
-        
-        function toggleGroup(e) {
-            const groupRow = e.currentTarget;
-            const path = groupRow.dataset.path;
-            
-            if (expandedGroups.has(path)) {
-                expandedGroups.delete(path);
-            } else {
-                expandedGroups.add(path);
-            }
-            
-            groupRow.classList.toggle('collapsed');
-            
-            const allRows = Array.from(document.querySelectorAll('tr[data-parent^="' + path + '"], tr[data-path^="' + path + '-"]'));
-            allRows.forEach(row => {
-                if (row.classList.contains('detail-row')) {
-                    row.classList.toggle('hidden');
-                } else if (row.classList.contains('group-row')) {
-                    const rowPath = row.dataset.path;
-                    if (rowPath.startsWith(path + '-')) {
-                        row.classList.toggle('hidden');
-                    }
-                }
-            });
         }
         
         function formatValue(val, colName) {
@@ -657,33 +652,8 @@ def create_pivot_html(df, output_file='pivot_table.html',
                     });
                     csv.push(rowData.join(','));
                 } else if (row.classList.contains('group-row')) {
-                    const path = row.dataset.path;
-                    const pathParts = path ? path.split('-') : [];
-                    const level = pathParts.length - 1;
-                    
-                    let rowData = [];
-                    
-                    for (let i = 0; i < groupByCols.length; i++) {
-                        if (i <= level) {
-                            let text = pathParts[i] || '';
-                            text = text.replace(/"/g, '""');
-                            rowData.push(`"${text}"`);
-                        } else {
-                            rowData.push('""');
-                        }
-                    }
-                    
-                    const valueCells = Array.from(row.querySelectorAll('td')).slice(1);
-                    valueCells.forEach(cell => {
-                        let text = cell.textContent.trim();
-                        text = text.replace(/"/g, '""');
-                        rowData.push(`"${text}"`);
-                    });
-                    
-                    csv.push(rowData.join(','));
-                } else if (row.classList.contains('detail-row')) {
-                    const parentPath = row.dataset.parent;
-                    const pathParts = parentPath ? parentPath.split('-') : [];
+                    const path = row.getAttribute('data-path');
+                    const pathParts = path.split('>');
                     
                     let rowData = [];
                     
@@ -713,18 +683,9 @@ def create_pivot_html(df, output_file='pivot_table.html',
         }
         
         function downloadFullData() {
-            const valueColsSelect = document.getElementById('valueCols');
-            const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
-            
-            if (valueCols.length === 0) {
-                alert('Please select at least one value column');
-                return;
-            }
-            
             const allCols = Object.keys(data[0] || {});
             
             let csv = [];
-            
             csv.push(allCols.map(col => `"${col}"`).join(','));
             
             data.forEach(row => {
@@ -756,7 +717,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
         }
         
         document.getElementById('groupBy').addEventListener('change', () => {
-            expandedGroups.clear();
+            collapsedGroups.clear();
             renderPivotTable();
         });
         document.getElementById('valueCols').addEventListener('change', renderPivotTable);
@@ -775,7 +736,6 @@ def create_pivot_html(df, output_file='pivot_table.html',
 
 # Example usage:
 if __name__ == "__main__":
-    # Sample data with PnL column
     sample_data = pd.DataFrame({
         'Region': ['East', 'East', 'West', 'West', 'East', 'West', 'North', 'North'],
         'Product': ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B'],
@@ -783,7 +743,7 @@ if __name__ == "__main__":
         'Sales': [100000, 150000, 200000, 120000, 180000, 140000, 90000, 110000],
         'Quantity': [10, 15, 20, 12, 18, 14, 9, 11],
         'Profit': [30000, 45000, 60000, 36000, 54000, 42000, 27000, 33000],
-        'PnL': [-25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000],
+        'PnL': [25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000],
         'Growth': [5.5, 8.2, 12.0, 6.5, 9.8, 7.0, 4.0, 6.0],
         'Margin': [0.255, 0.382, 0.520, 0.285, 0.458, 0.350, 0.220, 0.280]
     })
