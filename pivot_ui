@@ -482,7 +482,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
             });
             
             const result = {};
-            Object.keys(groups).sort().forEach(key => {
+            Object.keys(groups).forEach(key => {
                 result[key] = buildTree(groups[key], groupCols, level + 1);
             });
             
