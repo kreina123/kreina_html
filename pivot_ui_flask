@@ -384,8 +384,13 @@ def create_pivot_html(df,
                 if (!response.ok) throw new Error('API request failed');
                 
                 const result = await response.json();
+                
+                // Reset filters on new data query
+                Object.keys(pivotFilters).forEach(k => delete pivotFilters[k]);
+                Object.keys(numericFilters).forEach(k => delete numericFilters[k]);
+                
                 data = result.tree || {};
-                allRecords = result.all_records || []; // Full records (or sample)
+                allRecords = result.all_records || []; // Full records (or larger sample)
                 filteredData = [...allRecords];
                 grandTotalData = data._agg || {};
                 
@@ -611,8 +616,7 @@ def create_pivot_html(df,
         function initFilters(cols) {
             cols.forEach(col => {
                 if (!pivotFilters[col]) {
-                    // Use filteredData which contains the flat records for filter initialization
-                    const uniqueValues = [...new Set(filteredData.map(row => {
+                    const uniqueValues = [...new Set(allRecords.map(row => {
                         const val = row[col];
                         return val !== null && val !== undefined ? String(val) : '(blank)';
                     }))];
@@ -620,26 +624,18 @@ def create_pivot_html(df,
                 }
             });
         }
-        
-        window.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
-                const openDropdown = document.querySelector('.filter-dropdown.show');
-                if (openDropdown) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    applyColumnFilter();
-                }
-            }
-        }, true);
-        
-        function applyFilters() {
-            filteredData = allRecords.filter(row => {
+
+        function getFilteredData(excludeCol = null) {
+            return allRecords.filter(row => {
+                // Pivot Filters
                 for (const col in pivotFilters) {
-                    if (pivotFilters[col].size === 0) return false;
+                    if (col === excludeCol) continue;
                     const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
                     if (!pivotFilters[col].has(val)) return false;
                 }
+                // Numeric Filters
                 for (const col in numericFilters) {
+                    if (col === excludeCol) continue;
                     const filter = numericFilters[col];
                     if (filter.operator === 'none') continue;
                     const rowVal = parseFloat(row[col]) || 0;
@@ -655,6 +651,21 @@ def create_pivot_html(df,
                 }
                 return true;
             });
+        }
+        
+        window.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                const openDropdown = document.querySelector('.filter-dropdown.show');
+                if (openDropdown) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    applyColumnFilter();
+                }
+            }
+        }, true);
+        
+        function applyFilters() {
+            filteredData = getFilteredData();
             collapsedGroups.clear();
             renderPivotTable();
         }
@@ -703,12 +714,15 @@ def create_pivot_html(df,
         }
         
         function selectAll(col) {
-            const uniqueValues = [...new Set(filteredData.map(row => {
+            const contextData = getFilteredData(col);
+            const availableValues = [...new Set(contextData.map(row => {
                 const val = row[col];
                 return val !== null && val !== undefined ? String(val) : '(blank)';
             }))];
-            pivotFilters[col] = new Set(uniqueValues);
-            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => cb.checked = true);
+            availableValues.forEach(val => pivotFilters[col].add(val));
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => {
+                if (cb.offsetParent !== null) cb.checked = true; // Only visible ones
+            });
         }
         
         function selectNone(col) {
@@ -757,7 +771,7 @@ def create_pivot_html(df,
         
         function isColumnFiltered(col, type) {
             if (type === 'pivot') {
-                const allValues = [...new Set(filteredData.map(row => {
+                const allValues = [...new Set(allRecords.map(row => {
                     const val = row[col];
                     return val !== null && val !== undefined ? String(val) : '(blank)';
                 }))];
@@ -852,7 +866,8 @@ def create_pivot_html(df,
             
             groupByCols.forEach(col => {
                 const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
-                const uniqueValues = [...new Set(filteredData.map(row => {
+                const contextData = getFilteredData(col);
+                const uniqueValues = [...new Set(contextData.map(row => {
                     const val = row[col];
                     return val !== null && val !== undefined ? String(val) : '(blank)';
                 }))].sort(getSortComparator(col));
@@ -1319,7 +1334,7 @@ def pivot_api():
     return jsonify({
         'tree': tree,
         'flat_data': [], # No longer needed for aggregation, saves memory
-        'all_records': filtered_df.to_dict('records')[:100] # Return small sample for reference if needed
+        'all_records': filtered_df.to_dict('records')[:5000] # Increased sample for more accurate client-side filtering
     })
 
 @app.route('/pivot_table.html')
