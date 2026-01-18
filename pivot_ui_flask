@@ -1170,8 +1170,13 @@ def create_pivot_html(df,
             if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
             if (fmt === 'percent') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + '%';
             if (fmt === 'number') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
-            if (fmt === 'decimal1') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(val);
-            if (fmt === 'decimal2') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+            if (fmt.startsWith('decimal')) {
+                const matches = fmt.match(/^decimal(\d+)$/);
+                if (matches) {
+                    const digits = parseInt(matches[1], 10);
+                    return new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(val);
+                }
+            }
             return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
         }
         
@@ -1541,7 +1546,7 @@ if __name__ == "__main__":
                 'weights_col': 'Quantity',
                 'null_on_nulls': True,
                 'default': True,
-                'fmt': 'decimal2'
+                'fmt': 'decimal4'
             }
         }
     )
