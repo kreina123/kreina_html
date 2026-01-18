@@ -1,0 +1,1384 @@
+import pandas as pd
+import json
+import os
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+
+GLOBAL_DF = None
+PIVOT_CONFIG = {}
+
+def create_pivot_html(df, 
+                      pivot_cols=None, 
+                      value_cols=None, 
+                      default_pivots=None, 
+                      default_values=None,
+                      formatting=None,
+                      pivot_sorting=None,
+                      port=5001,
+                      debug=False):
+    """
+    Create an interactive HTML pivot table that fetches data from a Flask API.
+    """
+    global GLOBAL_DF, PIVOT_CONFIG
+    GLOBAL_DF = df
+    PIVOT_CONFIG = {
+        'pivot_cols': pivot_cols,
+        'value_cols': value_cols,
+        'default_pivots': default_pivots,
+        'default_values': default_values,
+        'formatting': formatting,
+        'pivot_sorting': pivot_sorting
+    }
+    
+    all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+    
+    if pivot_cols is None:
+        pivot_cols = all_non_numeric_cols
+    elif isinstance(pivot_cols, str):
+        pivot_cols = [pivot_cols]
+    
+    if value_cols is None:
+        value_cols = all_numeric_cols
+    elif isinstance(value_cols, str):
+        value_cols = [value_cols]
+    
+    if default_pivots is None and pivot_cols:
+        default_pivots = [pivot_cols[0]]
+    elif default_pivots is None:
+        default_pivots = []
+    elif isinstance(default_pivots, str):
+        default_pivots = [default_pivots]
+        
+    if default_values is None:
+        default_values = value_cols
+    elif isinstance(default_values, str):
+        default_values = [default_values]
+    
+    if formatting is None:
+        formatting = {}
+    
+    if pivot_sorting is None:
+        pivot_sorting = {}
+    
+    # df_json = df.to_json(orient='records') # Removed to save memory
+    formatting_json = json.dumps(formatting)
+    pivot_sorting_json = json.dumps(pivot_sorting)
+    
+    pivot_options = '\n'.join([
+        f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
+        for col in pivot_cols
+    ])
+    
+    value_options = '\n'.join([
+        f'<option value="{col}" {"selected" if col in default_values else ""}>{col}</option>' 
+        for col in value_cols
+    ])
+    
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agency PnL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fa; padding: 30px; color: #2c3e50; }
+        .container { max-width: 1600px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: visible; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px 30px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0; }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .button-group { display: flex; gap: 12px; align-items: center; }
+        .download-btn { background: white; color: #667eea; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .download-btn.secondary { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); }
+        .controls { padding: 24px 30px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: 600; font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px; }
+        .select-wrapper { display: flex; gap: 12px; align-items: stretch; }
+        select { padding: 10px 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white; font-family: inherit; flex: 1; }
+        select:focus { outline: none; border-color: #667eea; }
+        select[multiple] { min-height: 100px; }
+        .order-buttons { display: flex; flex-direction: column; gap: 4px; }
+        .order-btn { background: #667eea; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; }
+        .order-btn:hover { background: #5568d3; }
+        .help-text { font-size: 12px; color: #6c757d; font-style: italic; }
+        
+        /* Toolbar */
+        .toolbar { padding: 12px 30px; background: #fff; border-bottom: 1px solid #e9ecef; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .toolbar-btn { background: #f8f9fa; color: #495057; border: 1px solid #dee2e6; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; font-family: inherit; }
+        .toolbar-btn:hover { background: #e9ecef; border-color: #adb5bd; }
+        .toolbar-btn.active { background: #667eea; color: white; border-color: #667eea; }
+        .toolbar-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #495057; font-weight: 600; cursor: pointer; text-transform: none; letter-spacing: normal; font-family: inherit; }
+        .toolbar-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #667eea; }
+        .toolbar-separator { width: 1px; height: 24px; background: #dee2e6; margin: 0 8px; }
+        
+        /* Loading Overlay */
+        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .loading-overlay.hidden { display: none; }
+        .loading-spinner { width: 40px; height: 40px; border: 4px solid #e9ecef; border-top-color: #667eea; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-left: 16px; font-size: 14px; color: #6c757d; }
+        
+        /* Virtual Scroll Container */
+        .virtual-scroll-container { max-height: 600px; overflow-y: auto; position: relative; }
+        .virtual-scroll-container.large-data { max-height: 70vh; }
+        
+        .table-wrapper { padding: 30px; overflow: visible; position: relative; }
+        .pivot-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'Segoe UI', Calibri, Helvetica, sans-serif; }
+        .pivot-table th { background: #e6e6e6; color: #333; padding: 4px 8px; text-align: left; font-weight: 600; font-size: 12px; border: 1px solid #c0c0c0; position: sticky; top: 0; z-index: 10; }
+        .th-content { display: flex; justify-content: space-between; align-items: center; }
+        .th-text { flex: 1; }
+        .pivot-table th.value-header .th-content { justify-content: flex-end; }
+        .pivot-table th.value-header .th-text { text-align: right; }
+        .filter-icon { cursor: pointer; padding: 2px 4px; border-radius: 2px; font-size: 10px; opacity: 0.5; margin-left: 4px; color: #555; transition: all 0.2s; }
+        .filter-icon:hover { opacity: 1; background: rgba(0,0,0,0.1); }
+        .filter-icon.active { opacity: 1; background: #0066cc; color: white; font-weight: bold; }
+        .pivot-table td { padding: 4px 8px; border: 1px solid #c0c0c0; background: white; white-space: nowrap; color: #333; }
+        .group-row { }
+        .group-row:hover { background: #f0f0f0 !important; }
+        .group-row td { font-weight: 500; background: #f8f9fa; color: #333; }
+        .group-row.hidden { display: none; }
+        .level-1 td { background: #f5f5f5 !important; }
+        .level-2 td { background: #ffffff !important; }
+        .grand-total { background: #e6e6e6 !important; font-weight: 700; }
+        .grand-total td { background: #e6e6e6 !important; border-top: 2px solid #a0a0a0; border-bottom: 2px solid #a0a0a0; }
+        .group-row.collapsed .toggle-icon { transform: rotate(-90deg); }
+        .value-cell { text-align: right; font-variant-numeric: tabular-nums; }
+        .level-0 td { background: #f0f0f0 !important; font-weight: 600; }
+        .positive { color: #008000; } .negative { color: #d00000; }
+        .table-container { 
+            position: relative;
+            flex-grow: 1; 
+            overflow: auto; 
+            background: #fff; 
+            border: 1px solid #dee2e6; 
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .table-container.out-of-sync .virtual-scroll-container {
+            filter: blur(5px);
+            opacity: 0.6;
+        }
+        .sync-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            color: #333;
+            font-weight: 600;
+            z-index: 1001;
+            display: none;
+            white-space: nowrap;
+            border: 1px solid #dee2e6;
+            text-align: center;
+        }
+        .table-container.out-of-sync .sync-overlay {
+            display: block;
+        }
+        .cell-empty { background: #fcfcfc; }
+        
+        /* Filter Dropdown */
+        .filter-dropdown { position: fixed; min-width: 180px; background: white; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; display: none; color: #333; font-size: 11px; border: 1px solid #c0c0c0; }
+        .filter-dropdown.show { display: block; }
+        .filter-dropdown-header { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background: #f9f9f9; font-weight: 600; font-size: 11px; }
+        .filter-dropdown-close { cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666; }
+        .filter-dropdown-close:hover { color: #000; }
+        .filter-dropdown-body { padding: 8px; max-height: 250px; overflow-y: auto; }
+        .filter-search { width: 100%; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; margin-bottom: 8px; font-family: inherit; }
+        .filter-search:focus { outline: none; border-color: #667eea; }
+        .filter-actions-row { display: flex; gap: 12px; margin-bottom: 8px; font-size: 11px; }
+        .filter-actions-row span { color: #0066cc; cursor: pointer; }
+        .filter-actions-row span:hover { text-decoration: underline; }
+        .filter-options { max-height: 150px; overflow-y: auto; border: 1px solid #f0f0f0; }
+        .filter-option { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: pointer; font-size: 11px; font-weight: normal; color: #333; }
+        .filter-option:hover { background: #f0f0f0; }
+        .filter-option input[type="checkbox"] { width: 12px; height: 12px; margin: 0; }
+        
+        /* Sort Icons */
+        .sort-icon { font-size: 8px; margin-left: 4px; opacity: 0.2; cursor: pointer; color: #333; }
+        .sort-icon.active { opacity: 1; color: #0066cc; font-weight: bold; }
+        .th-content { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .th-content:hover .sort-icon { opacity: 0.6; }
+        .th-text-container { display: flex; align-items: center; flex: 1; }
+        
+        /* Filter Footer */
+        .filter-dropdown-footer { padding: 8px; border-top: 1px solid #e0e0e0; display: flex; gap: 8px; justify-content: flex-end; background: #f9f9f9; }
+        .filter-apply-btn { background: #0066cc; color: white; border: none; padding: 4px 10px; border-radius: 3px; font-size: 11px; cursor: pointer; }
+        .filter-apply-btn:hover { background: #0052a3; }
+        .filter-clear-btn { background: white; color: #333; border: 1px solid #ccc; padding: 4px 10px; border-radius: 3px; font-size: 11px; cursor: pointer; }
+        .filter-clear-btn:hover { background: #e0e0e0; }
+        .numeric-filter-select { width: 100%; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; margin-bottom: 8px; }
+        .numeric-filter-input { width: 100%; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; margin-bottom: 6px; }
+        
+        /* Specificity Fixes & Arrow Alignment */
+        .pivot-table td.positive { color: #008000 !important; }
+        .pivot-table td.negative { color: #d00000 !important; }
+        
+        /* Cell Alignment */
+        .pivot-table td { vertical-align: middle; }
+        .toggle-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-right: 4px; font-size: 9px; color: #555; vertical-align: middle; position: relative; top: -1px; cursor: pointer; user-select: none; }
+        .toggle-placeholder { display: inline-block; width: 18px; }
+        
+        /* Download Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: white; border-radius: 12px; padding: 24px; min-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal h3 { margin-bottom: 16px; color: #333; font-size: 18px; }
+        .modal-option { display: flex; align-items: center; gap: 10px; padding: 12px; margin-bottom: 8px; background: #f8f9fa; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
+        .modal-option:hover { background: #e9ecef; }
+        .modal-option input { width: 18px; height: 18px; accent-color: #667eea; }
+        .modal-option label { cursor: pointer; font-size: 14px; }
+        .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+        .modal-btn { padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .modal-btn.primary { background: #667eea; color: white; border: none; }
+        .modal-btn.primary:hover { background: #5568d3; }
+        .modal-btn.secondary { background: white; color: #6c757d; border: 1px solid #dee2e6; }
+        .modal-btn.secondary:hover { background: #f8f9fa; }
+        
+        /* Toast Notification */
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; z-index: 20000; display: none; opacity: 0; transition: opacity 0.3s; }
+        .toast.show { display: block; opacity: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Agency PnL</h1>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="groupBy">Pivots</label>
+                <div class="select-wrapper">
+                    <select id="groupBy" multiple onmousedown="handleSelectMouseDown(event, 'groupBy')" onchange="handleSelectChange('groupBy')">
+                        ''' + pivot_options + '''
+                    </select>
+                    <div class="order-buttons">
+                        <button class="order-btn" onclick="movePivotUp()" title="Move selected pivot up in hierarchy">▲ Up</button>
+                        <button class="order-btn" onclick="movePivotDown()" title="Move selected pivot down in hierarchy">▼ Down</button>
+                    </div>
+                </div>
+                <div class="help-text">Click to toggle selection • Use Up/Down to reorder</div>
+            </div>
+            
+            <div class="control-group">
+                <label for="valueCols">Values</label>
+                <select id="valueCols" multiple onmousedown="handleSelectMouseDown(event, 'valueCols')" onchange="handleSelectChange('valueCols')">
+                    ''' + value_options + '''
+                </select>
+                <div class="help-text">Click to toggle selection</div>
+            </div>
+        </div>
+        
+        <div class="toolbar">
+            <button class="toolbar-btn" onclick="expandAll()" title="Expand all groups">
+                <span>⊞</span> Expand All
+            </button>
+            <button class="toolbar-btn" onclick="collapseAll()" title="Collapse all groups">
+                <span>⊟</span> Collapse All
+            </button>
+            <div class="toolbar-separator"></div>
+            <button class="toolbar-btn" onclick="copyViewToClipboard()" title="Copy current view to clipboard">
+                <span>📋</span> Copy View to Clipboard
+            </button>
+            <label class="toolbar-item" title="Toggle group subtotal rows in export">
+                <input type="checkbox" id="includeSubtotals" checked>
+                Include Group Subtotals
+            </label>
+            <div class="toolbar-separator"></div>
+            <button class="toolbar-btn" onclick="showDownloadModal()" title="Download current view">
+                <span>📥</span> Download View
+            </button>
+            <button class="toolbar-btn" onclick="downloadFullData()" title="Download full data">
+                <span>📊</span> Download Full Data
+            </button>
+            <div class="toolbar-separator"></div>
+            <button class="toolbar-btn" style="background: #667eea; color: white;" onclick="fetchPivotData()" id="queryBtn" title="Fetch aggregated data from server">
+                <span>🔍</span> Query Data
+            </button>
+            <div class="toolbar-separator"></div>
+            <span style="font-size: 12px; color: #6c757d;" id="rowCount">Ready</span>
+        </div>
+        
+        <div id="toast" class="toast">Copied to clipboard!</div>
+        
+        <div class="table-wrapper">
+            <div class="loading-overlay hidden" id="loadingOverlay">
+                <div class="loading-spinner"></div>
+                <span class="loading-text">Processing data...</span>
+            </div>
+            <div class="table-container" id="tableContainer">
+                <div class="sync-overlay">Query Data to Update View</div>
+                <div class="virtual-scroll-container" id="scrollContainer">
+                    <div id="pivotTableContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="filterDropdowns"></div>
+    
+    <!-- Download Modal -->
+    <div class="modal-overlay" id="downloadModal">
+        <div class="modal">
+            <h3>Download Options</h3>
+            <div class="modal-option">
+                <input type="checkbox" id="includeGrandTotal" checked>
+                <label for="includeGrandTotal">Include grand total</label>
+            </div>
+            <div class="modal-option">
+                <input type="checkbox" id="onlyVisible" checked>
+                <label for="onlyVisible">Only visible rows (respects expand/collapse)</label>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" onclick="closeDownloadModal()">Cancel</button>
+                <button class="modal-btn primary" onclick="downloadView()">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let data = {}; // Aggregated Tree Object
+        let allRecords = []; // Original flat records from server
+        let filteredData = []; // Filtered flat records
+        let allGroupPaths = [];
+        let lastQueriedPivots = [];
+        let lastQueriedValues = [];
+        let isSyncing = false;
+        const formatting = ''' + formatting_json + ''';
+        const pivotSorting = ''' + pivot_sorting_json + ''';
+        const collapsedGroups = new Set();
+        const pivotFilters = {};
+        const numericFilters = {};
+
+        async function fetchPivotData() {
+            const groupBySelect = document.getElementById('groupBy');
+            const pivots = Array.from(groupBySelect.options).filter(opt => opt.selected).map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const values = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+
+            if (pivots.length === 0 || values.length === 0) {
+                alert('Please select at least one pivot and one value column.');
+                return;
+            }
+
+            showLoading();
+            document.getElementById('queryBtn').disabled = true;
+            document.getElementById('queryBtn').textContent = 'Querying...';
+
+            try {
+                const apiHost = window.location.protocol === 'file:' ? 'http://localhost:' + ''' + str(port) + ''' : '';
+                const response = await fetch(apiHost + '/api/pivot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pivots, values, pivot_sorting: pivotSorting })
+                });
+                
+                if (!response.ok) throw new Error('API request failed');
+                
+                const result = await response.json();
+                data = result.tree || {};
+                allRecords = result.all_records || []; // Full records (or sample)
+                filteredData = [...allRecords];
+                grandTotalData = data._agg || {};
+                
+                lastQueriedPivots = [...pivots];
+                lastQueriedValues = [...values];
+                checkSyncState();
+                
+                collapsedGroups.clear();
+                renderPivotTable();
+                showToast('Data updated from server');
+            } catch (err) {
+                console.error(err);
+                alert('Failed to fetch data: ' + err.message);
+            } finally {
+                hideLoading();
+                isSyncing = false;
+                document.getElementById('queryBtn').disabled = false;
+                document.getElementById('queryBtn').textContent = 'Query Data';
+            }
+        }
+
+        function checkSyncState() {
+            const groupBySelect = document.getElementById('groupBy');
+            const currentPivots = Array.from(groupBySelect.options).filter(opt => opt.selected).map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const currentValues = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+
+            const container = document.getElementById('tableContainer');
+            
+            // Logic for greying out:
+            // 1. Pivots changed (order or items) -> Grey out
+            // 2. Any value selected that was NOT in the last query -> Grey out
+            
+            const pivotsMatch = JSON.stringify(currentPivots) === JSON.stringify(lastQueriedPivots);
+            const valuesSubset = currentValues.every(v => lastQueriedValues.includes(v));
+            
+            const isOutOfSync = !pivotsMatch || !valuesSubset;
+            
+            if (isOutOfSync) {
+                container.classList.add('out-of-sync');
+            } else {
+                container.classList.remove('out-of-sync');
+            }
+            
+            return isOutOfSync;
+        }
+        
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            // We don't render until first query
+            document.getElementById('pivotTableContent').innerHTML = '<p style="padding: 20px; color: #6c757d;">Select pivots and values, then click "Query Data".</p>';
+            checkSyncState(); // Check initial sync state
+        });
+        
+        // Parse date string using format pattern
+        function parseDateWithFormat(dateStr, format) {
+            if (!dateStr || dateStr === '(blank)') return null;
+            const str = String(dateStr).trim();
+            
+            // Common format patterns
+            const patterns = {
+                'MM/DD/YYYY': /^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/,
+                'M/D/YYYY': /^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/,
+                'MM-DD-YYYY': /^(\\d{1,2})-(\\d{1,2})-(\\d{4})$/,
+                'M-D-YYYY': /^(\\d{1,2})-(\\d{1,2})-(\\d{4})$/,
+                'YYYY-MM-DD': /^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/,
+                'YYYY/MM/DD': /^(\\d{4})\\/(\\d{1,2})\\/(\\d{1,2})$/,
+                'DD/MM/YYYY': /^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/,
+                'DD-MM-YYYY': /^(\\d{1,2})-(\\d{1,2})-(\\d{4})$/
+            };
+            
+            const pattern = patterns[format] || patterns['MM/DD/YYYY'];
+            const match = str.match(pattern);
+            if (!match) return null;
+            
+            let year, month, day;
+            if (format && format.startsWith('YYYY')) {
+                [, year, month, day] = match;
+            } else if (format && format.startsWith('DD')) {
+                [, day, month, year] = match;
+            } else {
+                [, month, day, year] = match;
+            }
+            return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).getTime();
+        }
+        
+        // Get sort comparator for a column
+        function getSortComparator(col) {
+            const config = pivotSorting[col] || {};
+            const sortType = config.type || 'text';
+            const order = config.order || 'asc';
+            const dateFormat = config.format || 'MM/DD/YYYY';
+            const multiplier = order === 'desc' ? -1 : 1;
+            
+            if (sortType === 'date') {
+                return (a, b) => {
+                    const dateA = parseDateWithFormat(a, dateFormat);
+                    const dateB = parseDateWithFormat(b, dateFormat);
+                    if (dateA === null && dateB === null) return 0;
+                    if (dateA === null) return 1;
+                    if (dateB === null) return -1;
+                    return (dateA - dateB) * multiplier;
+                };
+            } else if (sortType === 'number') {
+                return (a, b) => {
+                    const numA = parseFloat(a);
+                    const numB = parseFloat(b);
+                    if (isNaN(numA) && isNaN(numB)) return 0;
+                    if (isNaN(numA)) return 1;
+                    if (isNaN(numB)) return -1;
+                    return (numA - numB) * multiplier;
+                };
+            } else {
+                // Text sort
+                return (a, b) => {
+                    const strA = String(a || '');
+                    const strB = String(b || '');
+                    return strA.localeCompare(strB) * multiplier;
+                };
+            }
+        }
+        
+        // Get aggregation result based on node or calculated rows
+        function getAggregationResult(node, col) {
+            // Priority 1: Server-precalculated aggregation
+            if (node && node._agg && node._agg[col] !== undefined) {
+                return node._agg[col];
+            }
+            
+            // Priority 2: Fallback to client-side calc if records are available
+            const rows = Array.isArray(node) ? node : (node && node._groups ? flattenTree(node) : []);
+            if (rows.length === 0) return null;
+
+            const config = pivotSorting[col] || {};
+            const aggOp = config.agg || 'sum';
+            const nullOnNulls = config.null_on_nulls || false;
+            
+            const values = rows.map(r => {
+                const val = r[col];
+                return (val === null || val === undefined) ? null : parseFloat(val);
+            });
+            
+            const hasNulls = values.some(v => v === null);
+            if (nullOnNulls && hasNulls) return null;
+            
+            const nonNullValues = values.filter(v => v !== null && !isNaN(v));
+            if (nonNullValues.length === 0) return null;
+            
+            switch (aggOp) {
+                case 'avg': return nonNullValues.reduce((a, b) => a + b, 0) / nonNullValues.length;
+                case 'min': return Math.min(...nonNullValues);
+                case 'max': return Math.max(...nonNullValues);
+                case 'count': return nonNullValues.length;
+                default: return nonNullValues.reduce((a, b) => a + b, 0);
+            }
+        }
+        
+        // Large dataset handling
+        const LARGE_DATA_THRESHOLD = 5000;
+        const isLargeDataset = false; // We use API for large data, virtual scroll still works on rendered rows.
+        
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+        
+        // Mark scroll container for large datasets
+        if (isLargeDataset) {
+            document.addEventListener('DOMContentLoaded', () => {
+                const container = document.getElementById('scrollContainer');
+                if (container) container.classList.add('large-data');
+            });
+        }
+        
+        // Handle mousedown to toggle selection in multi-select
+        function handleSelectMouseDown(event, selectId) {
+            const option = event.target;
+            if (option.tagName === 'OPTION') {
+                event.preventDefault();
+                // Toggle the selection
+                option.selected = !option.selected;
+                // Trigger the change handler
+                handleSelectChange(selectId);
+            }
+        }
+        
+        function handleSelectChange(selectId) {
+            collapsedGroups.clear();
+            if (selectId === 'groupBy') {
+                Object.keys(pivotFilters).forEach(k => delete pivotFilters[k]);
+                // filteredData = [...data]; // This is wrong now, filteredData is already correct from API
+            }
+            renderPivotTable();
+            checkSyncState(); // Check sync state after select change
+        }
+        
+        function expandAll() {
+            collapsedGroups.clear();
+            document.querySelectorAll('.group-row').forEach(row => {
+                row.classList.remove('collapsed');
+                row.classList.remove('hidden');
+            });
+        }
+        
+        function collapseAll() {
+            // Collapse only top-level groups (level 0)
+            document.querySelectorAll('.group-row[data-level="0"]').forEach(row => {
+                const path = row.getAttribute('data-path');
+                collapsedGroups.add(path);
+                row.classList.add('collapsed');
+            });
+            // Hide all non-level-0 rows
+            document.querySelectorAll('.group-row').forEach(row => {
+                const level = parseInt(row.getAttribute('data-level'));
+                if (level > 0) row.classList.add('hidden');
+            });
+        }
+        
+        function initFilters(cols) {
+            cols.forEach(col => {
+                if (!pivotFilters[col]) {
+                    // Use filteredData which contains the flat records for filter initialization
+                    const uniqueValues = [...new Set(filteredData.map(row => {
+                        const val = row[col];
+                        return val !== null && val !== undefined ? String(val) : '(blank)';
+                    }))];
+                    pivotFilters[col] = new Set(uniqueValues);
+                }
+            });
+        }
+        
+        window.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                const openDropdown = document.querySelector('.filter-dropdown.show');
+                if (openDropdown) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    applyColumnFilter();
+                }
+            }
+        }, true);
+        
+        function applyFilters() {
+            filteredData = allRecords.filter(row => {
+                for (const col in pivotFilters) {
+                    if (pivotFilters[col].size === 0) return false;
+                    const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
+                    if (!pivotFilters[col].has(val)) return false;
+                }
+                for (const col in numericFilters) {
+                    const filter = numericFilters[col];
+                    if (filter.operator === 'none') continue;
+                    const rowVal = parseFloat(row[col]) || 0;
+                    const val1 = parseFloat(filter.value1);
+                    const val2 = parseFloat(filter.value2);
+                    switch (filter.operator) {
+                        case 'equals': if (isNaN(val1) || rowVal !== val1) return false; break;
+                        case 'notEquals': if (isNaN(val1) || rowVal === val1) return false; break;
+                        case 'greaterThan': if (isNaN(val1) || rowVal <= val1) return false; break;
+                        case 'lessThan': if (isNaN(val1) || rowVal >= val1) return false; break;
+                        case 'between': if (isNaN(val1) || isNaN(val2) || rowVal < val1 || rowVal > val2) return false; break;
+                    }
+                }
+                return true;
+            });
+            collapsedGroups.clear();
+            renderPivotTable();
+        }
+        
+        let activeSort = { col: null, dir: 'asc' };
+
+        function toggleSort(col, event) {
+            // Don't sort if clicking filter icon
+            if (event.target.closest('.filter-icon')) return;
+            
+           if (activeSort.col === col) {
+               activeSort.dir = activeSort.dir === 'asc' ? 'desc' : 'asc';
+           } else {
+               activeSort.col = col;
+               activeSort.dir = 'asc';
+           }
+           renderPivotTable();
+        }
+
+        function showFilterDropdown(col, type, event) {
+            event.stopPropagation();
+            closeAllDropdowns();
+            const dropdown = document.getElementById('dropdown-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+            if (dropdown) {
+                const th = event.target.closest('th');
+                const rect = th.getBoundingClientRect();
+                dropdown.style.top = (rect.bottom + 1) + 'px';
+                dropdown.style.left = rect.left + 'px';
+                
+                // Simple viewport check
+                if (rect.left + 200 > window.innerWidth) {
+                    dropdown.style.left = (window.innerWidth - 210) + 'px';
+                }
+                
+                dropdown.classList.add('show');
+            }
+        }
+        
+        function closeAllDropdowns() {
+            document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+        }
+        
+        function toggleFilterValue(col, value) {
+            if (pivotFilters[col].has(value)) pivotFilters[col].delete(value);
+            else pivotFilters[col].add(value);
+        }
+        
+        function selectAll(col) {
+            const uniqueValues = [...new Set(filteredData.map(row => {
+                const val = row[col];
+                return val !== null && val !== undefined ? String(val) : '(blank)';
+            }))];
+            pivotFilters[col] = new Set(uniqueValues);
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => cb.checked = true);
+        }
+        
+        function selectNone(col) {
+            pivotFilters[col] = new Set();
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => cb.checked = false);
+        }
+        
+        function searchFilter(input, col) {
+            const term = input.value.toLowerCase();
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' .filter-option').forEach(opt => {
+                const val = opt.getAttribute('data-value').toLowerCase();
+                opt.style.display = val.includes(term) ? 'flex' : 'none';
+            });
+        }
+        
+        function updateNumericFilter(col, field, value) {
+            if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
+            numericFilters[col][field] = value;
+            if (field === 'operator') renderNumericInputs(col);
+        }
+        
+        function renderNumericInputs(col) {
+            const container = document.getElementById('numeric-inputs-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+            if (!container) return;
+            const filter = numericFilters[col] || { operator: 'none', value1: '', value2: '' };
+            let html = '';
+            if (filter.operator === 'between') {
+                html = '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + (filter.value2 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
+            } else if (filter.operator !== 'none') {
+                html = '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
+            }
+            container.innerHTML = html;
+        }
+        
+        function clearColumnFilter(col, type) {
+            if (type === 'pivot') selectAll(col);
+            else numericFilters[col] = { operator: 'none', value1: '', value2: '' };
+            applyFilters();
+            closeAllDropdowns();
+        }
+        
+        function applyColumnFilter() {
+            applyFilters();
+            closeAllDropdowns();
+        }
+        
+        function isColumnFiltered(col, type) {
+            if (type === 'pivot') {
+                const allValues = [...new Set(filteredData.map(row => {
+                    const val = row[col];
+                    return val !== null && val !== undefined ? String(val) : '(blank)';
+                }))];
+                return pivotFilters[col] && pivotFilters[col].size < allValues.length;
+            }
+            return numericFilters[col] && numericFilters[col].operator !== 'none';
+        }
+        
+        function renderPivotTable() {
+            // Show loading for large datasets
+            if (isLargeDataset) {
+                showLoading();
+                // Use setTimeout to allow loading indicator to display
+                setTimeout(() => renderPivotTableInternal(), 10);
+            } else {
+                renderPivotTableInternal();
+            }
+        }
+        
+        function renderPivotTableInternal() {
+            const groupBySelect = document.getElementById('groupBy');
+            const groupByCols = Array.from(groupBySelect.options).filter(opt => opt.selected).map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+            
+            const target = document.getElementById('pivotTableContent');
+            
+            if (!data || (typeof data === 'object' && !data._groups && !data._agg)) {
+                target.innerHTML = '<p style="padding: 20px; color: #6c757d;">No data loaded. Click "Query Data" to fetch results.</p>';
+                document.getElementById('rowCount').textContent = 'Ready';
+                hideLoading();
+                return;
+            }
+            if (valueCols.length === 0) {
+                target.innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one value column.</p>';
+                document.getElementById('filterDropdowns').innerHTML = '';
+                document.getElementById('rowCount').textContent = '0 rows';
+                hideLoading();
+                return;
+            }
+            
+            initFilters(groupByCols);
+            allGroupPaths = [];
+            
+            // If filtered, build local tree. If not, use server tree.
+            const isBrowserFiltered = filteredData.length < allRecords.length;
+            const tree = isBrowserFiltered ? buildTree(filteredData, groupByCols, 0) : data;
+            let html = '<table class="pivot-table" id="pivotTable"><thead><tr>';
+            
+            groupByCols.forEach(col => {
+                const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
+                const filtered = isColumnFiltered(col, 'pivot');
+                const sortIcon = activeSort.col === col ? (activeSort.dir === 'asc' ? '▲' : '▼') : '▲▼';
+                const activeClass = activeSort.col === col ? 'active' : '';
+                html += '<th onclick="toggleSort(\\'' + col + '\\', event)"><div class="th-content">';
+                html += '<div class="th-text-container"><span class="th-text">' + col + '</span><span class="sort-icon ' + activeClass + '">' + sortIcon + '</span></div>';
+                html += '<span class="filter-icon ' + (filtered ? 'active' : '') + '" onclick="showFilterDropdown(\\'' + col + '\\', \\'pivot\\', event)">☰</span></div></th>';
+            });
+            
+            valueCols.forEach(col => {
+                const filtered = isColumnFiltered(col, 'numeric');
+                const sortIcon = activeSort.col === col ? (activeSort.dir === 'asc' ? '▲' : '▼') : '▲▼';
+                const activeClass = activeSort.col === col ? 'active' : '';
+                html += '<th class="value-header" onclick="toggleSort(\\'' + col + '\\', event)"><div class="th-content">';
+                html += '<div class="th-text-container" style="justify-content: flex-end; width: 100%;"><span class="th-text">' + col + '</span><span class="sort-icon ' + activeClass + '">' + sortIcon + '</span></div>';
+                html += '<span class="filter-icon ' + (filtered ? 'active' : '') + '" onclick="showFilterDropdown(\\'' + col + '\\', \\'numeric\\', event)">☰</span></div></th>';
+            });
+            html += '</tr></thead><tbody>';
+            
+            if (activeSort.col) {
+                sortTree(tree, 0, groupByCols, activeSort.col, activeSort.dir);
+            }
+            
+            html += renderTree(tree, groupByCols, valueCols, 0, '');
+            
+            html += '<tr class="grand-total" data-type="grand-total">';
+            html += '<td>Grand Total</td>';
+            for (let i = 1; i < groupByCols.length; i++) html += '<td></td>';
+            valueCols.forEach(col => {
+                const grandTotal = getAggregationResult(tree, col);
+                const config = pivotSorting[col] || {};
+                const colorClass = config.format_colors ? (grandTotal < 0 ? 'negative' : (grandTotal > 0 ? 'positive' : '')) : '';
+                html += '<td class="value-cell ' + colorClass + '">' + formatValue(grandTotal, col) + '</td>';
+            });
+            html += '</tr></tbody></table>';
+            
+            target.innerHTML = html;
+            document.getElementById('rowCount').textContent = 'Aggregated view loaded';
+            
+            // Build filter dropdowns
+            let dropdownsHtml = '';
+            
+            groupByCols.forEach(col => {
+                const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
+                const uniqueValues = [...new Set(filteredData.map(row => {
+                    const val = row[col];
+                    return val !== null && val !== undefined ? String(val) : '(blank)';
+                }))].sort(getSortComparator(col));
+                
+                dropdownsHtml += '<div class="filter-dropdown" id="dropdown-' + safeCol + '">';
+                dropdownsHtml += '<div class="filter-dropdown-header"><span>Filter: ' + col + '</span><span class="filter-dropdown-close" onclick="closeAllDropdowns()">✕</span></div>';
+                dropdownsHtml += '<div class="filter-dropdown-body">';
+                dropdownsHtml += '<input type="text" class="filter-search" placeholder="Search..." onkeyup="searchFilter(this, \\'' + col + '\\')">';
+                dropdownsHtml += '<div class="filter-actions-row"><span onclick="selectAll(\\'' + col + '\\')">Select All</span><span onclick="selectNone(\\'' + col + '\\')">Select None</span></div>';
+                dropdownsHtml += '<div class="filter-options" id="options-' + safeCol + '">';
+                uniqueValues.forEach(val => {
+                    const checked = !pivotFilters[col] || pivotFilters[col].has(val) ? 'checked' : '';
+                    const escaped = val.replace(/'/g, "\\\\'").replace(/"/g, '&quot;');
+                    dropdownsHtml += '<label class="filter-option" data-value="' + val + '"><input type="checkbox" ' + checked + ' onchange="toggleFilterValue(\\'' + col + '\\', \\'' + escaped + '\\')"><span>' + val + '</span></label>';
+                });
+                dropdownsHtml += '</div></div>';
+                dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'pivot\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
+                dropdownsHtml += '</div>';
+            });
+            
+            valueCols.forEach(col => {
+                const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
+                if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
+                const filter = numericFilters[col];
+                
+                dropdownsHtml += '<div class="filter-dropdown" id="dropdown-' + safeCol + '">';
+                dropdownsHtml += '<div class="filter-dropdown-header"><span>Filter: ' + col + '</span><span class="filter-dropdown-close" onclick="closeAllDropdowns()">✕</span></div>';
+                dropdownsHtml += '<div class="filter-dropdown-body">';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'operator\\', this.value)">';
+                dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
+                dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Equals</option>';
+                dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Not equals</option>';
+                dropdownsHtml += '<option value="greaterThan"' + (filter.operator === 'greaterThan' ? ' selected' : '') + '>Greater than</option>';
+                dropdownsHtml += '<option value="lessThan"' + (filter.operator === 'lessThan' ? ' selected' : '') + '>Less than</option>';
+                dropdownsHtml += '<option value="between"' + (filter.operator === 'between' ? ' selected' : '') + '>Between</option>';
+                dropdownsHtml += '</select>';
+                dropdownsHtml += '<div id="numeric-inputs-' + safeCol + '">';
+                if (filter.operator === 'between') {
+                    dropdownsHtml += '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + filter.value2 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)"></div>';
+                } else if (filter.operator !== 'none') {
+                    dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">';
+                }
+                dropdownsHtml += '</div></div>';
+                dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'numeric\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
+                dropdownsHtml += '</div>';
+            });
+            
+            document.getElementById('filterDropdowns').innerHTML = dropdownsHtml;
+            
+            document.querySelectorAll('.group-row').forEach(row => {
+                row.addEventListener('click', function(e) {
+                    if (e.target.classList.contains('toggle-icon')) {
+                        e.stopPropagation();
+                        toggleGroup(this.getAttribute('data-path'));
+                    }
+                });
+            });
+            
+            // Hide loading overlay after rendering
+            hideLoading();
+        }
+        
+        function buildTree(rows, groupCols, level) {
+            if (level >= groupCols.length) return rows;
+            const col = groupCols[level];
+            const groups = {};
+            rows.forEach(row => {
+                const key = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(row);
+            });
+            const comparator = getSortComparator(col);
+            const sortedKeys = Object.keys(groups).sort(comparator);
+            const result = { _groups: {}, _sortedKeys: sortedKeys };
+            sortedKeys.forEach(key => { 
+                result._groups[key] = buildTree(groups[key], groupCols, level + 1); 
+            });
+            return result;
+        }
+
+        function sortTree(node, level, groupCols, sortCol, sortDir) {
+            if (!node._sortedKeys) return;
+            
+            // Check if we are sorting by the group column at this level
+            const isGroupSort = groupCols[level] === sortCol;
+            // Check if value sort (if not a group column)
+            const isValueSort = !groupCols.includes(sortCol);
+            
+            if (isGroupSort) {
+                 node._sortedKeys.sort((a, b) => {
+                      // Simple numeric/string sort
+                      const valA = a === '(blank)' ? '' : a;
+                      const valB = b === '(blank)' ? '' : b;
+                      const numA = parseFloat(valA), numB = parseFloat(valB);
+                      const isNum = !isNaN(numA) && !isNaN(numB);
+                      let result = 0;
+                      if (isNum) result = numA - numB;
+                      else result = String(valA).localeCompare(String(valB));
+                      return result * (sortDir === 'asc' ? 1 : -1);
+                 });
+            } else if (isValueSort) {
+                node._sortedKeys.sort((a, b) => {
+                    const valA = getAggregationResult(node._groups[a], sortCol) ?? -Infinity;
+                    const valB = getAggregationResult(node._groups[b], sortCol) ?? -Infinity;
+                    return (valA - valB) * (sortDir === 'asc' ? 1 : -1);
+                });
+            }
+            
+            // Recurse
+            node._sortedKeys.forEach(key => {
+                sortTree(node._groups[key], level + 1, groupCols, sortCol, sortDir);
+            });
+        }
+
+        function renderTree(node, groupCols, valueCols, level, parentPath) {
+            let html = '';
+            if (Array.isArray(node)) return html;
+            
+            // Use _sortedKeys array to preserve custom sort order
+            const sortedKeys = node._sortedKeys || Object.keys(node);
+            const groups = node._groups || node;
+            
+            sortedKeys.forEach(key => {
+                const groupPath = parentPath ? parentPath + '>' + key : key;
+                allGroupPaths.push(groupPath);
+                const isCollapsed = collapsedGroups.has(groupPath);
+                const nodeData = groups[key];
+                const hasChildren = nodeData && nodeData._groups;
+                
+                html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
+                
+                groupCols.forEach((col, colIdx) => {
+                    if (colIdx < level) {
+                        html += '<td class="cell-empty"></td>';
+                    } else if (colIdx === level) {
+                        if (hasChildren) {
+                            html += '<td><span class="toggle-icon">▼</span>' + key + '</td>';
+                        } else {
+                            html += '<td><span class="toggle-placeholder"></span>' + key + '</td>';
+                        }
+                    } else {
+                        html += '<td class="cell-empty"></td>';
+                    }
+                });
+                
+                valueCols.forEach(col => {
+                    const aggVal = getAggregationResult(nodeData, col);
+                    const config = pivotSorting[col] || {};
+                    const colorClass = config.format_colors ? (aggVal < 0 ? 'negative' : (aggVal > 0 ? 'positive' : '')) : '';
+                    html += '<td class="value-cell ' + colorClass + '">' + formatValue(aggVal, col) + '</td>';
+                });
+                html += '</tr>';
+                
+                if (hasChildren) {
+                    html += renderTree(nodeData, groupCols, valueCols, level + 1, groupPath);
+                }
+            });
+            
+            return html;
+        }
+        
+        function toggleGroup(path) {
+            if (collapsedGroups.has(path)) collapsedGroups.delete(path);
+            else collapsedGroups.add(path);
+            
+            const clickedRow = document.querySelector('[data-path="' + path + '"]');
+            if (clickedRow) clickedRow.classList.toggle('collapsed');
+            
+            document.querySelectorAll('.group-row').forEach(row => {
+                const rowPath = row.getAttribute('data-path');
+                if (rowPath && rowPath.startsWith(path + '>')) {
+                    let shouldBeVisible = true;
+                    const pathSegments = rowPath.split('>');
+                    for (let i = 0; i < pathSegments.length - 1; i++) {
+                        if (collapsedGroups.has(pathSegments.slice(0, i + 1).join('>'))) { 
+                            shouldBeVisible = false; 
+                            break; 
+                        }
+                    }
+                    row.classList.toggle('hidden', !shouldBeVisible);
+                }
+            });
+        }
+        
+        function flattenTree(node) {
+            if (Array.isArray(node)) return node;
+            // Handle new node structure with _groups
+            const groups = node._groups || node;
+            let result = [];
+            Object.values(groups).forEach(child => { result = result.concat(flattenTree(child)); });
+            return result;
+        }
+        
+        function formatValue(val, colName) {
+            if (val === null || val === undefined || isNaN(val)) return '';
+            const fmt = formatting[colName];
+            if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+            if (fmt === 'percent') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + '%';
+            if (fmt === 'number') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
+            if (fmt === 'decimal1') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(val);
+            if (fmt === 'decimal2') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+            return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+        }
+        
+        function movePivotUp() {
+            const select = document.getElementById('groupBy');
+            const selected = Array.from(select.selectedOptions);
+            if (selected.length !== 1) { alert('Select one pivot to reorder'); return; }
+            const opt = selected[0], prev = opt.previousElementSibling;
+            if (prev) { 
+                select.insertBefore(opt, prev); 
+                collapsedGroups.clear(); 
+                renderPivotTable(); 
+                checkSyncState();
+            }
+        }
+        
+        function movePivotDown() {
+            const select = document.getElementById('groupBy');
+            const selected = Array.from(select.selectedOptions);
+            if (selected.length !== 1) { alert('Select one pivot to reorder'); return; }
+            const opt = selected[0], next = opt.nextElementSibling;
+            if (next) { 
+                select.insertBefore(next, opt); 
+                select.insertBefore(opt, next.nextElementSibling); 
+                collapsedGroups.clear(); 
+                renderPivotTable(); 
+                checkSyncState();
+            }
+        }
+        
+        function showDownloadModal() {
+            document.getElementById('downloadModal').classList.add('show');
+        }
+        
+        function closeDownloadModal() {
+            document.getElementById('downloadModal').classList.remove('show');
+        }
+        
+        function getExportData(options, separator) {
+            const table = document.getElementById('pivotTable');
+            if (!table) return null;
+            
+            const groupBySelect = document.getElementById('groupBy');
+            const groupByCols = Array.from(groupBySelect.options).filter(o => o.selected).map(o => o.value);
+            const valueCols = Array.from(document.getElementById('valueCols').selectedOptions).map(o => o.value);
+            const maxLevel = groupByCols.length - 1;
+            
+            const escape = (val) => {
+                if (val === null || val === undefined) return '';
+                const str = String(val).replace(/"/g, '""');
+                if (str.includes(separator) || str.includes('"') || str.includes('\\n') || (separator === ',' && str.includes(','))) {
+                    return '"' + str + '"';
+                }
+                return str;
+            };
+            
+            let rows = Array.from(table.querySelectorAll('tbody tr'));
+            if (options.onlyVisible) {
+                rows = rows.filter(r => !r.classList.contains('hidden'));
+            }
+            
+            let result = [groupByCols.concat(valueCols).map(escape).join(separator)];
+            
+            rows.forEach(row => {
+                const rowType = row.getAttribute('data-type');
+                
+                if (rowType === 'grand-total') {
+                    if (!options.includeGrandTotal) return;
+                    let rowData = [escape('Grand Total')];
+                    for (let i = 1; i < groupByCols.length; i++) rowData.push(escape(''));
+                    const cells = Array.from(row.querySelectorAll('td.value-cell'));
+                    cells.forEach(c => rowData.push(escape(c.textContent.trim())));
+                    result.push(rowData.join(separator));
+                    return;
+                }
+                
+                if (rowType === 'subtotal') {
+                    const level = parseInt(row.getAttribute('data-level'));
+                    const isCollapsed = row.classList.contains('collapsed');
+                    
+                    // Inclusion Logic:
+                    // 1. Leaf rows (level === maxLevel) are always included as they are the primary data.
+                    // 2. Parent rows (level < maxLevel) are included if 'Include Group Subtotals' is checked.
+                    // 3. Collapsed parent rows are included if 'Only Visible' is on (they act as the leaf for that branch).
+                    let shouldInclude = (level === maxLevel) || options.includeSubtotals || (options.onlyVisible && isCollapsed);
+                    
+                    if (!shouldInclude) return;
+                    
+                    const path = row.getAttribute('data-path');
+                    const pathParts = path.split('>');
+                    let rowData = [];
+                    for (let i = 0; i < groupByCols.length; i++) {
+                        if (i <= level && pathParts[i]) {
+                            rowData.push(escape(pathParts[i]));
+                        } else {
+                            rowData.push(escape(''));
+                        }
+                    }
+                    const cells = Array.from(row.querySelectorAll('td.value-cell'));
+                    cells.forEach(c => rowData.push(escape(c.textContent.trim())));
+                    result.push(rowData.join(separator));
+                }
+            });
+            console.log('Export generated with ' + result.length + ' rows (including header)');
+            return result.join('\\n');
+        }
+
+        function downloadView() {
+            const subtotalCheckbox = document.getElementById('includeSubtotals');
+            const grandTotalCheckbox = document.getElementById('includeGrandTotal');
+            const onlyVisibleCheckbox = document.getElementById('onlyVisible');
+            
+            const options = {
+                includeSubtotals: subtotalCheckbox ? subtotalCheckbox.checked : true,
+                includeGrandTotal: grandTotalCheckbox ? grandTotalCheckbox.checked : true,
+                onlyVisible: onlyVisibleCheckbox ? onlyVisibleCheckbox.checked : true
+            };
+            
+            const csvContent = getExportData(options, ',');
+            if (csvContent) {
+                downloadCSV(csvContent, 'pivot_view_' + new Date().toISOString().split('T')[0] + '.csv');
+            }
+            closeDownloadModal();
+        }
+
+        async function copyViewToClipboard() {
+            const subtotalCheckbox = document.getElementById('includeSubtotals');
+            const grandTotalCheckbox = document.getElementById('includeGrandTotal');
+            const onlyVisibleCheckbox = document.getElementById('onlyVisible');
+
+            const options = {
+                includeSubtotals: subtotalCheckbox ? subtotalCheckbox.checked : true,
+                includeGrandTotal: grandTotalCheckbox ? grandTotalCheckbox.checked : true,
+                onlyVisible: onlyVisibleCheckbox ? onlyVisibleCheckbox.checked : true
+            };
+            
+            console.log('Copying view with options:', options);
+            const tsvContent = getExportData(options, '\\t');
+            if (!tsvContent) return;
+            
+            try {
+                await navigator.clipboard.writeText(tsvContent);
+                showToast('Copied to clipboard!');
+            } catch (err) {
+                console.error('Copy failed', err);
+                alert('Failed to copy to clipboard');
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+        
+        function downloadFullData() {
+            if (allRecords.length === 0) { alert('No data loaded to download'); return; }
+            const cols = Object.keys(allRecords[0] || {});
+            let csv = [cols.map(c => '"' + c + '"').join(',')];
+            allRecords.forEach(row => csv.push(cols.map(c => '"' + (row[c] ?? '').toString().replace(/"/g, '""') + '"').join(',')));
+            downloadCSV(csv.join('\\n'), 'full_data_' + new Date().toISOString().split('T')[0] + '.csv');
+        }
+        
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        document.addEventListener('click', function(e) { 
+            if (!e.target.closest('.filter-dropdown') && !e.target.closest('.filter-icon')) closeAllDropdowns(); 
+        });
+        
+        renderPivotTable();
+    </script>
+</body>
+</html>
+'''
+    
+    with open('pivot_table.html', 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"Pivot table template saved to pivot_table.html")
+    print(f"Starting server on http://localhost:{port}")
+    try:
+        app.run(debug=debug, port=port, use_reloader=False)
+    except Exception as e:
+        print(f"ERROR: Could not start server on port {port}: {e}")
+        print(f"TIP: If you are on macOS, port 5000 is often used by AirPlay Receiver.")
+        print(f"Try passing a different port number to create_pivot_html(..., port=5002)")
+
+@app.route('/api/pivot', methods=['POST'])
+def pivot_api():
+    config = request.json
+    pivots = config.get('pivots', [])
+    values = config.get('values', [])
+    pivot_sorting = config.get('pivot_sorting', {})
+    
+    if GLOBAL_DF is None or not pivots:
+        return jsonify({'tree': {}, 'flat_data': []})
+
+    # Hierarchical aggregation logic
+    def calculate_aggs(group_df, values_list, sorting_config):
+        aggs = {}
+        for col in values_list:
+            conf = sorting_config.get(col, {})
+            agg_op = conf.get('agg', 'sum')
+            null_on_nulls = conf.get('null_on_nulls', False)
+            
+            if group_df.empty:
+                aggs[col] = None
+                continue
+                
+            series = group_df[col]
+            if null_on_nulls and series.isnull().any():
+                aggs[col] = None
+                continue
+                
+            non_null = series.dropna()
+            if non_null.empty:
+                aggs[col] = None
+                continue
+            
+            if agg_op == 'avg': aggs[col] = float(non_null.mean())
+            elif agg_op == 'min': aggs[col] = float(non_null.min())
+            elif agg_op == 'max': aggs[col] = float(non_null.max())
+            elif agg_op == 'count': aggs[col] = int(len(non_null))
+            else: aggs[col] = float(non_null.sum())
+        return aggs
+
+    def build_tree_python(df, current_pivots, value_cols, sorting_config, current_level=0):
+        # Calculate aggregations for THIS node (the group itself)
+        node_aggs = calculate_aggs(df, value_cols, sorting_config)
+        
+        if current_level >= len(current_pivots):
+            return {"_agg": node_aggs} # Leaf node just returns its aggregations
+        
+        col = current_pivots[current_level]
+        groups = df.groupby(col, dropna=False)
+        
+        result = {"_groups": {}, "_sortedKeys": [], "_agg": node_aggs}
+        
+        for name, group_df in groups:
+            key = str(name) if pd.notnull(name) else "(blank)"
+            
+            # Sub-tree
+            children = build_tree_python(group_df, current_pivots, value_cols, sorting_config, current_level + 1)
+            result["_groups"][key] = children
+            result["_sortedKeys"].append(key)
+            
+        return result
+
+    filtered_df = GLOBAL_DF.copy()
+    tree = build_tree_python(filtered_df, pivots, values, pivot_sorting)
+    
+    return jsonify({
+        'tree': tree,
+        'flat_data': [], # No longer needed for aggregation, saves memory
+        'all_records': filtered_df.to_dict('records')[:100] # Return small sample for reference if needed
+    })
+
+@app.route('/pivot_table.html')
+def serve_html():
+    template_path = os.path.abspath('pivot_table.html')
+    return send_from_directory(os.path.dirname(template_path), os.path.basename(template_path))
+
+@app.route('/')
+def home():
+    return serve_html()
+
+
+if __name__ == "__main__":
+    # Sample data with dates and version numbers to demonstrate custom sorting
+    sample_data = pd.DataFrame({
+        'Region': ['East', 'East', 'West', 'West', 'East', 'West', 'North', 'North', 'South', 'South', 'East', 'West'],
+        'Product': ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'C', 'C'],
+        'Category': ['Electronics', 'Electronics', 'Electronics', 'Furniture', 'Furniture', 'Furniture', 'Electronics', 'Furniture', 'Electronics', 'Furniture', 'Electronics', 'Furniture'],
+        'Date': ['1/15/2025', '12/1/2024', '9/11/2025', '2/28/2025', '11/5/2024', '3/22/2025', '8/8/2025', '4/1/2025', '10/20/2024', '5/15/2025', '6/30/2025', '7/4/2025'],
+        'Version': ['2.5', '10', '1.1', '5', '3.2', '7', '9', '4.5', '12', '2', '8', '6.5'],
+        'Sales': [100000, 150000, 200000, 120000, 180000, 140000, 90000, 110000, 95000, 130000, 160000, 175000],
+        'Quantity': [10, 15, 20, 12, 18, 14, 9, 11, 8, 13, 16, 19],
+        'Profit': [30000, 45000, 60000, 36000, 54000, 42000, 27000, 33000, 28500, 39000, 48000, 52500],
+        'PnL': [25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000, 24000, 32500, 40000, 43500],
+        'Growth': [5.5, 8.2, 12.0, 6.5, 9.8, 7.0, 4.0, 6.0, 3.5, 7.5, 10.5, 11.2],
+        'Margin': [0.255, 0.382, 0.520, 0.285, 0.458, 0.350, 0.220, 0.280, 0.300, 0.325, 0.400, 0.430]
+    })
+    
+    create_pivot_html(
+        sample_data, 
+        pivot_cols=['Region', 'Product', 'Category', 'Date', 'Version'],
+        value_cols=['Sales', 'PnL', 'Growth', 'Margin', 'Quantity', 'Profit'],
+        default_pivots=['Region', 'Date'],
+        default_values=['Sales', 'PnL'],
+        formatting={
+            'Sales': 'currency',
+            'PnL': 'currency',
+            'Growth': 'percent',
+            'Margin': 'decimal2',
+            'Quantity': 'number',
+            'Profit': 'currency'
+        },
+        # Custom sorting for dates and version numbers
+        pivot_sorting={
+            'Date': {
+                'type': 'date',
+                'format': 'M/D/YYYY',  # Format: M/D/YYYY or MM/DD/YYYY
+                'order': 'asc'  # Chronological order
+            },
+            'Version': {
+                'type': 'number',
+                'order': 'asc'  # 1.1, 2, 2.5, 3.2, 4.5, 5, 6.5, 7, 8, 9, 10, 12
+            },
+            'Region': {
+                'order': 'desc'  # Descending alphabetical: West, South, North, East
+            },
+            'Sales': {'format_colors': True},
+            'PnL': {'format_colors': True, 'agg': 'avg'},
+            'Profit': {'format_colors': True, 'agg': 'max'},
+            'Growth': {'agg': 'min', 'null_on_nulls': True},
+            'Margin': {'agg': 'count'}
+        }
+    )
