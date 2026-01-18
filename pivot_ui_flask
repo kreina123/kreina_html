@@ -834,11 +834,13 @@ def create_pivot_html(df,
             
             if (field === 'agg' || field === 'weights_col' || field === 'null_on_nulls' || field === 'val_col' || field === 'decimals') {
                 if (field === 'decimals') {
-                    formattingDict[col].fmt = 'decimal' + value;
+                    const currentFmt = formattingDict[col].fmt || '';
+                    const prefix = currentFmt.startsWith('percent') ? 'percent' : 'decimal';
+                    formattingDict[col].fmt = prefix + value;
                     // Update ONLY the value cells for this column
                     document.querySelectorAll('td.value-cell[data-col="' + col + '"]').forEach(cell => {
                         const raw = cell.getAttribute('data-raw');
-                        if (raw !== '') {
+                        if (raw && raw !== '') {
                             cell.textContent = formatValue(parseFloat(raw), col);
                         }
                     });
@@ -1230,14 +1232,28 @@ def create_pivot_html(df,
             const config = formattingDict[colName] || {};
             const fmt = config.fmt || '';
             if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
-            if (fmt === 'percent') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + '%';
+            
+            if (fmt.startsWith('percent')) {
+                let digits = 0;
+                if (fmt === 'percent') digits = 0;
+                else {
+                    const matches = fmt.match(/^percent(\d+)$/);
+                    if (matches) digits = parseInt(matches[1], 10);
+                }
+                // Intl.NumberFormat style: 'percent' MULTIPLIES by 100 automatically.
+                return new Intl.NumberFormat('en-US', { 
+                    style: 'percent', 
+                    minimumFractionDigits: digits, 
+                    maximumFractionDigits: digits 
+                }).format(val);
+            }
+            
             if (fmt === 'number') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
             if (fmt.startsWith('decimal')) {
+                let digits = 2;
                 const matches = fmt.match(/^decimal(\d+)$/);
-                if (matches) {
-                    const digits = parseInt(matches[1], 10);
-                    return new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(val);
-                }
+                if (matches) digits = parseInt(matches[1], 10);
+                return new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(val);
             }
             return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
         }
@@ -1586,7 +1602,7 @@ if __name__ == "__main__":
         'Quantity': np.random.randint(1, 50, n_rows),
         'Profit': np.random.randint(100, 50000, n_rows),
         'PnL': np.random.randint(-10000, 40000, n_rows),
-        'Growth': np.random.uniform(0, 15, n_rows).round(1),
+        'Growth': np.random.uniform(0, 0.15, n_rows),
         'Margin': np.array(margins).round(3)
     })
     
@@ -1613,7 +1629,7 @@ if __name__ == "__main__":
             'Sales': {'format_colors': True, 'fmt': 'currency'},
             'PnL': {'format_colors': True, 'agg': 'avg', 'fmt': 'currency'},
             'Profit': {'format_colors': True, 'agg': 'max', 'fmt': 'currency'},
-            'Growth': {'agg': 'min', 'null_on_nulls': True, 'fmt': 'percent'},
+            'Growth': {'agg': 'min', 'null_on_nulls': True, 'fmt': 'percent2'},
             'Margin': {'agg': 'count', 'fmt': 'decimal2'},
             'Quantity': {'fmt': 'number', 'agg': 'median'},
             'WMargin': {
