@@ -740,14 +740,23 @@ def create_pivot_html(df,
                 if (openDropdown) {
                     event.preventDefault();
                     event.stopPropagation();
-                    applyColumnFilter();
+                    
+                    // If focusing on a decimal input, just close the modal.
+                    // The surgical update was already triggered by 'onchange'.
+                    const active = document.activeElement;
+                    const isDecimal = active && active.tagName === 'INPUT' && active.type === 'number' && active.parentElement.querySelector('label')?.textContent.includes('Decimals');
+                    
+                    if (isDecimal) {
+                        closeAllDropdowns();
+                    } else {
+                        applyColumnFilter();
+                    }
                 }
             }
         }, true);
         
         function applyFilters() {
             filteredData = getFilteredData();
-            collapsedGroups.clear();
             renderPivotTable();
         }
         
@@ -823,13 +832,24 @@ def create_pivot_html(df,
             if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
             if (!formattingDict[col]) formattingDict[col] = {};
             
-            if (field === 'agg' || field === 'weights_col' || field === 'null_on_nulls' || field === 'val_col') {
-                formattingDict[col][field] = value;
-                if (field === 'agg') {
-                    const weightsSelect = document.getElementById('weights-select-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
-                    if (weightsSelect) weightsSelect.style.display = value === 'weighted_avg' ? 'block' : 'none';
+            if (field === 'agg' || field === 'weights_col' || field === 'null_on_nulls' || field === 'val_col' || field === 'decimals') {
+                if (field === 'decimals') {
+                    formattingDict[col].fmt = 'decimal' + value;
+                    // Update ONLY the value cells for this column
+                    document.querySelectorAll('td.value-cell[data-col="' + col + '"]').forEach(cell => {
+                        const raw = cell.getAttribute('data-raw');
+                        if (raw !== '') {
+                            cell.textContent = formatValue(parseFloat(raw), col);
+                        }
+                    });
+                } else {
+                    formattingDict[col][field] = value;
+                    if (field === 'agg') {
+                        const weightsSelect = document.getElementById('weights-select-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+                        if (weightsSelect) weightsSelect.style.display = value === 'weighted_avg' ? 'block' : 'none';
+                    }
+                    checkSyncState(); // Changing aggregation requires re-query
                 }
-                checkSyncState(); // Changing aggregation requires re-query
             } else {
                 numericFilters[col][field] = value;
                 if (field === 'operator') renderNumericInputs(col);
@@ -950,7 +970,7 @@ def create_pivot_html(df,
                 const grandTotal = getAggregationResult(tree, col);
                 const config = formattingDict[col] || {};
                 const colorClass = config.format_colors ? (grandTotal < 0 ? 'negative' : (grandTotal > 0 ? 'positive' : '')) : '';
-                html += '<td class="value-cell ' + colorClass + '">' + formatValue(grandTotal, col) + '</td>';
+                html += '<td class="value-cell ' + colorClass + '" data-col="' + col + '" data-raw="' + (grandTotal ?? '') + '">' + formatValue(grandTotal, col) + '</td>';
             });
             html += '</tr></tbody></table>';
             
@@ -1041,6 +1061,16 @@ def create_pivot_html(df,
                 dropdownsHtml += '</select></div>';
                 
                 dropdownsHtml += '<label class="filter-option" style="margin-top: 4px;"><input type="checkbox" ' + (currentNullOnNulls ? 'checked' : '') + ' onchange="updateNumericFilter(\\'' + col + '\\', \\'null_on_nulls\\', this.checked)"><span>null on nulls</span></label>';
+                
+                // Decimal Control
+                const fmt = colConf.fmt || '';
+                const decMatch = fmt.match(/decimal(\d+)/);
+                const decs = decMatch ? parseInt(decMatch[1]) : 2;
+                dropdownsHtml += '<div style="margin-top: 8px;">';
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Display Decimals</label>';
+                dropdownsHtml += '<input type="number" class="numeric-filter-input" min="0" max="10" value="' + decs + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'decimals\\', this.value)">';
+                dropdownsHtml += '</div>';
+                
                 dropdownsHtml += '</div>';
                 
                 dropdownsHtml += '</div>';
@@ -1115,7 +1145,7 @@ def create_pivot_html(df,
             });
         }
 
-        function renderTree(node, groupCols, valueCols, level, parentPath) {
+        function renderTree(node, groupCols, valueCols, level, parentPath, isParentCollapsed = false) {
             let html = '';
             if (Array.isArray(node) || level >= groupCols.length) return html;
             
@@ -1130,7 +1160,8 @@ def create_pivot_html(df,
                 const nodeData = groups[key];
                 const hasChildren = nodeData && nodeData._groups;
                 
-                html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
+                // Correctly apply 'hidden' class if parent is collapsed to preserve state across renders
+                html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + ' ' + (isParentCollapsed ? 'hidden' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
                 
                 groupCols.forEach((col, colIdx) => {
                     if (colIdx < level) {
@@ -1150,12 +1181,12 @@ def create_pivot_html(df,
                     const aggVal = getAggregationResult(nodeData, col);
                     const config = formattingDict[col] || {};
                     const colorClass = config.format_colors ? (aggVal < 0 ? 'negative' : (aggVal > 0 ? 'positive' : '')) : '';
-                    html += '<td class="value-cell ' + colorClass + '">' + formatValue(aggVal, col) + '</td>';
+                    html += '<td class="value-cell ' + colorClass + '" data-col="' + col + '" data-raw="' + (aggVal ?? '') + '">' + formatValue(aggVal, col) + '</td>';
                 });
                 html += '</tr>';
                 
                 if (hasChildren) {
-                    html += renderTree(nodeData, groupCols, valueCols, level + 1, groupPath);
+                    html += renderTree(nodeData, groupCols, valueCols, level + 1, groupPath, isParentCollapsed || isCollapsed);
                 }
             });
             
@@ -1282,7 +1313,10 @@ def create_pivot_html(df,
                     const labelCols = Math.max(1, groupByCols.length);
                     for (let i = 1; i < labelCols; i++) rowData.push(escape(''));
                     const cells = Array.from(row.querySelectorAll('td.value-cell'));
-                    cells.forEach(c => rowData.push(escape(c.textContent.trim())));
+                    cells.forEach(c => {
+                        const raw = c.getAttribute('data-raw');
+                        rowData.push(raw && raw !== '' ? escape(raw) : escape(c.textContent.trim()));
+                    });
                     result.push(rowData.join(separator));
                     return;
                 }
@@ -1310,7 +1344,10 @@ def create_pivot_html(df,
                         }
                     }
                     const cells = Array.from(row.querySelectorAll('td.value-cell'));
-                    cells.forEach(c => rowData.push(escape(c.textContent.trim())));
+                    cells.forEach(c => {
+                        const raw = c.getAttribute('data-raw');
+                        rowData.push(raw && raw !== '' ? escape(raw) : escape(c.textContent.trim()));
+                    });
                     result.push(rowData.join(separator));
                 }
             });
