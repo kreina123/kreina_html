@@ -34,21 +34,30 @@ def create_pivot_html(df,
     all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
     all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
     
+    # Add derived columns from formatting_dict to list of available numeric columns
+    # This ensures they show up in the "Value Column" and "Weights Column" selectors
+    if formatting_dict:
+        for col, conf in formatting_dict.items():
+            if isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
+                if col not in all_numeric_cols:
+                    all_numeric_cols.append(col)
+
     if pivot_cols is None:
         pivot_cols = all_non_numeric_cols
     elif isinstance(pivot_cols, str):
         pivot_cols = [pivot_cols]
     
     if value_cols is None:
-        value_cols = all_numeric_cols
+        value_cols = [c for c in all_numeric_cols if c in df.columns]
     elif isinstance(value_cols, str):
         value_cols = [value_cols]
     
-    # Add derived columns from formatting_dict to value_cols
+    # Ensure any requested derived columns are in value_cols
     if formatting_dict:
         for col, conf in formatting_dict.items():
-            if col not in value_cols and isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
-                value_cols.append(col)
+            if isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
+                if col not in value_cols:
+                    value_cols.append(col)
                 if default_values is not None and col not in default_values and conf.get('default'):
                      default_values.append(col)
     
@@ -59,21 +68,13 @@ def create_pivot_html(df,
     elif isinstance(default_pivots, str):
         default_pivots = [default_pivots]
         
-    if formatting_dict is None:
-        formatting_dict = {}
-    
-    # Add derived columns from formatting_dict to value_cols
-    if formatting_dict:
-        for col, conf in formatting_dict.items():
-            if col not in value_cols and isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
-                value_cols.append(col)
-                if default_values is not None and col not in default_values and conf.get('default'):
-                     default_values.append(col)
-    
     if default_values is None:
         default_values = value_cols
     elif isinstance(default_values, str):
         default_values = [default_values]
+
+    if formatting_dict is None:
+        formatting_dict = {}
 
     # df_json = df.to_json(orient='records') # Removed to save memory
     formatting_dict_json = json.dumps(formatting_dict)
@@ -1488,8 +1489,14 @@ if __name__ == "__main__":
     products = ['Product A', 'Product B', 'Product C', 'Product D']
     categories = ['Electronics', 'Furniture', 'Apparel', 'Accessories']
     
+    region_choices = np.random.choice(regions, n_rows)
+    # Bias Margin based on region to show distinct weighted averages
+    # East: ~0.2, West: ~0.5, North: ~0.3, South: ~0.4
+    margin_map = {'East': 0.2, 'West': 0.5, 'North': 0.3, 'South': 0.4}
+    margins = [margin_map[r] + np.random.uniform(-0.05, 0.05) for r in region_choices]
+    
     sample_data = pd.DataFrame({
-        'Region': np.random.choice(regions, n_rows),
+        'Region': region_choices,
         'Product': np.random.choice(products, n_rows),
         'Category': np.random.choice(categories, n_rows),
         'Date': [(pd.to_datetime('2024-01-01') + pd.to_timedelta(np.random.randint(0, 365), unit='D')).strftime('%-m/%-d/%Y') for _ in range(n_rows)],
@@ -1499,7 +1506,7 @@ if __name__ == "__main__":
         'Profit': np.random.randint(100, 50000, n_rows),
         'PnL': np.random.randint(-10000, 40000, n_rows),
         'Growth': np.random.uniform(0, 15, n_rows).round(1),
-        'Margin': np.random.uniform(0.1, 0.6, n_rows).round(3)
+        'Margin': np.array(margins).round(3)
     })
     
     create_pivot_html(
