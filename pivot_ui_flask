@@ -400,7 +400,15 @@ def create_pivot_html(df,
                 
                 collapsedGroups.clear();
                 renderPivotTable();
-                showToast('Data updated from server');
+                
+                // Auto-collapse if tree is large (> 1000 rows)
+                const totalRows = countTreeRows(data);
+                if (totalRows > 1000) {
+                    collapseAll();
+                    showToast('Large dataset detected: Auto-collapsed pivots');
+                } else {
+                    showToast('Data updated from server');
+                }
             } catch (err) {
                 console.error(err);
                 alert('Failed to fetch data: ' + err.message);
@@ -437,6 +445,17 @@ def create_pivot_html(df,
             }
             
             return isOutOfSync;
+        }
+
+        function countTreeRows(node) {
+            if (!node || !node._groups) return 0;
+            let count = 0;
+            const keys = Object.keys(node._groups);
+            count += keys.length;
+            keys.forEach(key => {
+                count += countTreeRows(node._groups[key]);
+            });
+            return count;
         }
         
         // Initial setup
@@ -821,6 +840,9 @@ def create_pivot_html(df,
             const tree = isBrowserFiltered ? buildTree(filteredData, groupByCols, 0) : data;
             let html = '<table class="pivot-table" id="pivotTable"><thead><tr>';
             
+            if (groupByCols.length === 0) {
+                html += '<th></th>'; // Placeholder for "Grand Total" label
+            }
             groupByCols.forEach(col => {
                 const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
                 const filtered = isColumnFiltered(col, 'pivot');
@@ -1130,7 +1152,9 @@ def create_pivot_html(df,
                 rows = rows.filter(r => !r.classList.contains('hidden'));
             }
             
-            let result = [groupByCols.concat(valueCols).map(escape).join(separator)];
+            let headerRow = groupByCols.concat(valueCols);
+            if (groupByCols.length === 0) headerRow.unshift('');
+            let result = [headerRow.map(escape).join(separator)];
             
             rows.forEach(row => {
                 const rowType = row.getAttribute('data-type');
@@ -1138,7 +1162,8 @@ def create_pivot_html(df,
                 if (rowType === 'grand-total') {
                     if (!options.includeGrandTotal) return;
                     let rowData = [escape('Grand Total')];
-                    for (let i = 1; i < groupByCols.length; i++) rowData.push(escape(''));
+                    const labelCols = Math.max(1, groupByCols.length);
+                    for (let i = 1; i < labelCols; i++) rowData.push(escape(''));
                     const cells = Array.from(row.querySelectorAll('td.value-cell'));
                     cells.forEach(c => rowData.push(escape(c.textContent.trim())));
                     result.push(rowData.join(separator));
@@ -1289,7 +1314,7 @@ def pivot_api():
                 aggs[col] = None
                 continue
                 
-            series = group_df[col]
+            series = pd.to_numeric(group_df[col], errors='coerce')
             if null_on_nulls and series.isnull().any():
                 aggs[col] = None
                 continue
@@ -1334,7 +1359,7 @@ def pivot_api():
     return jsonify({
         'tree': tree,
         'flat_data': [], # No longer needed for aggregation, saves memory
-        'all_records': filtered_df.to_dict('records')[:5000] # Increased sample for more accurate client-side filtering
+        'all_records': filtered_df.to_dict('records') # Full dataset for accurate client-side filtering
     })
 
 @app.route('/pivot_table.html')
@@ -1349,18 +1374,25 @@ def home():
 
 if __name__ == "__main__":
     # Sample data with dates and version numbers to demonstrate custom sorting
+    # Generate 10k rows of sample data with randomized values
+    import numpy as np
+    n_rows = 10000
+    regions = ['East', 'West', 'North', 'South']
+    products = ['Product A', 'Product B', 'Product C', 'Product D']
+    categories = ['Electronics', 'Furniture', 'Apparel', 'Accessories']
+    
     sample_data = pd.DataFrame({
-        'Region': ['East', 'East', 'West', 'West', 'East', 'West', 'North', 'North', 'South', 'South', 'East', 'West'],
-        'Product': ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'C', 'C'],
-        'Category': ['Electronics', 'Electronics', 'Electronics', 'Furniture', 'Furniture', 'Furniture', 'Electronics', 'Furniture', 'Electronics', 'Furniture', 'Electronics', 'Furniture'],
-        'Date': ['1/15/2025', '12/1/2024', '9/11/2025', '2/28/2025', '11/5/2024', '3/22/2025', '8/8/2025', '4/1/2025', '10/20/2024', '5/15/2025', '6/30/2025', '7/4/2025'],
-        'Version': ['2.5', '10', '1.1', '5', '3.2', '7', '9', '4.5', '12', '2', '8', '6.5'],
-        'Sales': [100000, 150000, 200000, 120000, 180000, 140000, 90000, 110000, 95000, 130000, 160000, 175000],
-        'Quantity': [10, 15, 20, 12, 18, 14, 9, 11, 8, 13, 16, 19],
-        'Profit': [30000, 45000, 60000, 36000, 54000, 42000, 27000, 33000, 28500, 39000, 48000, 52500],
-        'PnL': [25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000, 24000, 32500, 40000, 43500],
-        'Growth': [5.5, 8.2, 12.0, 6.5, 9.8, 7.0, 4.0, 6.0, 3.5, 7.5, 10.5, 11.2],
-        'Margin': [0.255, 0.382, 0.520, 0.285, 0.458, 0.350, 0.220, 0.280, 0.300, 0.325, 0.400, 0.430]
+        'Region': np.random.choice(regions, n_rows),
+        'Product': np.random.choice(products, n_rows),
+        'Category': np.random.choice(categories, n_rows),
+        'Date': [(pd.to_datetime('2024-01-01') + pd.to_timedelta(np.random.randint(0, 365), unit='D')).strftime('%-m/%-d/%Y') for _ in range(n_rows)],
+        'Version': [f"{np.random.randint(1, 15)}.{np.random.randint(0, 9)}" for _ in range(n_rows)],
+        'Sales': np.random.randint(1000, 200000, n_rows),
+        'Quantity': np.random.randint(1, 50, n_rows),
+        'Profit': np.random.randint(100, 50000, n_rows),
+        'PnL': np.random.randint(-10000, 40000, n_rows),
+        'Growth': np.random.uniform(0, 15, n_rows).round(1),
+        'Margin': np.random.uniform(0.1, 0.6, n_rows).round(3)
     })
     
     create_pivot_html(
