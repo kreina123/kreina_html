@@ -415,14 +415,15 @@ def create_pivot_html(df,
 
             const container = document.getElementById('tableContainer');
             
-            // Logic for greying out:
-            // 1. Pivots changed (order or items) -> Grey out
-            // 2. Any value selected that was NOT in the last query -> Grey out
+            // Logic for blurring (grey out):
+            // 1. Pivots: any currently selected pivot was NOT in the last query -> Blur
+            // 2. Values: any currently selected value was NOT in the last query -> Blur
+            // 3. Subsets of the last query do NOT trigger blur.
             
-            const pivotsMatch = JSON.stringify(currentPivots) === JSON.stringify(lastQueriedPivots);
+            const pivotsSubset = currentPivots.every(p => lastQueriedPivots.includes(p));
             const valuesSubset = currentValues.every(v => lastQueriedValues.includes(v));
             
-            const isOutOfSync = !pivotsMatch || !valuesSubset;
+            const isOutOfSync = !pivotsSubset || !valuesSubset;
             
             if (isOutOfSync) {
                 container.classList.add('out-of-sync');
@@ -968,7 +969,7 @@ def create_pivot_html(df,
 
         function renderTree(node, groupCols, valueCols, level, parentPath) {
             let html = '';
-            if (Array.isArray(node)) return html;
+            if (Array.isArray(node) || level >= groupCols.length) return html;
             
             // Use _sortedKeys array to preserve custom sort order
             const sortedKeys = node._sortedKeys || Object.keys(node);
