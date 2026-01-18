@@ -15,8 +15,7 @@ def create_pivot_html(df,
                       value_cols=None, 
                       default_pivots=None, 
                       default_values=None,
-                      formatting=None,
-                      pivot_sorting=None,
+                      formatting_dict=None,
                       port=5001,
                       debug=False):
     """
@@ -29,8 +28,7 @@ def create_pivot_html(df,
         'value_cols': value_cols,
         'default_pivots': default_pivots,
         'default_values': default_values,
-        'formatting': formatting,
-        'pivot_sorting': pivot_sorting
+        'formatting_dict': formatting_dict
     }
     
     all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
@@ -46,6 +44,14 @@ def create_pivot_html(df,
     elif isinstance(value_cols, str):
         value_cols = [value_cols]
     
+    # Add derived columns from formatting_dict to value_cols
+    if formatting_dict:
+        for col, conf in formatting_dict.items():
+            if col not in value_cols and isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
+                value_cols.append(col)
+                if default_values is not None and col not in default_values and conf.get('default'):
+                     default_values.append(col)
+    
     if default_pivots is None and pivot_cols:
         default_pivots = [pivot_cols[0]]
     elif default_pivots is None:
@@ -53,20 +59,25 @@ def create_pivot_html(df,
     elif isinstance(default_pivots, str):
         default_pivots = [default_pivots]
         
+    if formatting_dict is None:
+        formatting_dict = {}
+    
+    # Add derived columns from formatting_dict to value_cols
+    if formatting_dict:
+        for col, conf in formatting_dict.items():
+            if col not in value_cols and isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
+                value_cols.append(col)
+                if default_values is not None and col not in default_values and conf.get('default'):
+                     default_values.append(col)
+    
     if default_values is None:
         default_values = value_cols
     elif isinstance(default_values, str):
         default_values = [default_values]
-    
-    if formatting is None:
-        formatting = {}
-    
-    if pivot_sorting is None:
-        pivot_sorting = {}
-    
+
     # df_json = df.to_json(orient='records') # Removed to save memory
-    formatting_json = json.dumps(formatting)
-    pivot_sorting_json = json.dumps(pivot_sorting)
+    formatting_dict_json = json.dumps(formatting_dict)
+    numeric_cols_json = json.dumps(all_numeric_cols)
     
     pivot_options = '\n'.join([
         f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
@@ -330,7 +341,7 @@ def create_pivot_html(df,
         <div class="modal">
             <h3>Download Options</h3>
             <div class="modal-option">
-                <input type="checkbox" id="includeGrandTotal" checked>
+                <input type="checkbox" id="includeGrandTotal">
                 <label for="includeGrandTotal">Include grand total</label>
             </div>
             <div class="modal-option">
@@ -352,8 +363,8 @@ def create_pivot_html(df,
         let lastQueriedPivots = [];
         let lastQueriedValues = [];
         let isSyncing = false;
-        const formatting = ''' + formatting_json + ''';
-        const pivotSorting = ''' + pivot_sorting_json + ''';
+        const formattingDict = ''' + formatting_dict_json + ''';
+        const allNumericCols = ''' + numeric_cols_json + ''';
         const collapsedGroups = new Set();
         const pivotFilters = {};
         const numericFilters = {};
@@ -378,7 +389,7 @@ def create_pivot_html(df,
                 const response = await fetch(apiHost + '/api/pivot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pivots, values, pivot_sorting: pivotSorting })
+                    body: JSON.stringify({ pivots, values, formatting_dict: formattingDict })
                 });
                 
                 if (!response.ok) throw new Error('API request failed');
@@ -499,7 +510,7 @@ def create_pivot_html(df,
         
         // Get sort comparator for a column
         function getSortComparator(col) {
-            const config = pivotSorting[col] || {};
+            const config = formattingDict[col] || {};
             const sortType = config.type || 'text';
             const order = config.order || 'asc';
             const dateFormat = config.format || 'MM/DD/YYYY';
@@ -544,12 +555,13 @@ def create_pivot_html(df,
             const rows = Array.isArray(node) ? node : (node && node._groups ? flattenTree(node) : []);
             if (rows.length === 0) return null;
 
-            const config = pivotSorting[col] || {};
+            const config = formattingDict[col] || {};
             const aggOp = config.agg || 'sum';
             const nullOnNulls = config.null_on_nulls || false;
+            const valCol = config.val_col || col;
             
             const values = rows.map(r => {
-                const val = r[col];
+                const val = r[valCol];
                 return (val === null || val === undefined) ? null : parseFloat(val);
             });
             
@@ -564,6 +576,24 @@ def create_pivot_html(df,
                 case 'min': return Math.min(...nonNullValues);
                 case 'max': return Math.max(...nonNullValues);
                 case 'count': return nonNullValues.length;
+                case 'weighted_avg':
+                    const weightsCol = config.weights_col;
+                    if (!weightsCol) return null;
+                    const weights = rows.map(r => {
+                        const val = r[weightsCol];
+                        return (val === null || val === undefined) ? null : parseFloat(val);
+                    });
+                    if (nullOnNulls && weights.some(v => v === null)) return null;
+                    
+                    let weightedSum = 0;
+                    let weightTotal = 0;
+                    for (let i = 0; i < values.length; i++) {
+                        if (values[i] !== null && weights[i] !== null) {
+                            weightedSum += values[i] * weights[i];
+                            weightTotal += weights[i];
+                        }
+                    }
+                    return weightTotal === 0 ? null : weightedSum / weightTotal;
                 default: return nonNullValues.reduce((a, b) => a + b, 0);
             }
         }
@@ -759,8 +789,19 @@ def create_pivot_html(df,
         
         function updateNumericFilter(col, field, value) {
             if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
-            numericFilters[col][field] = value;
-            if (field === 'operator') renderNumericInputs(col);
+            if (!formattingDict[col]) formattingDict[col] = {};
+            
+            if (field === 'agg' || field === 'weights_col' || field === 'null_on_nulls' || field === 'val_col') {
+                formattingDict[col][field] = value;
+                if (field === 'agg') {
+                    const weightsSelect = document.getElementById('weights-select-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+                    if (weightsSelect) weightsSelect.style.display = value === 'weighted_avg' ? 'block' : 'none';
+                }
+                checkSyncState(); // Changing aggregation requires re-query
+            } else {
+                numericFilters[col][field] = value;
+                if (field === 'operator') renderNumericInputs(col);
+            }
         }
         
         function renderNumericInputs(col) {
@@ -835,9 +876,10 @@ def create_pivot_html(df,
             initFilters(groupByCols);
             allGroupPaths = [];
             
-            // If filtered, build local tree. If not, use server tree.
+            // If filtered or pivots changed, build local tree. If not, use server tree.
             const isBrowserFiltered = filteredData.length < allRecords.length;
-            const tree = isBrowserFiltered ? buildTree(filteredData, groupByCols, 0) : data;
+            const pivotsChanged = JSON.stringify(groupByCols) !== JSON.stringify(lastQueriedPivots);
+            const tree = (isBrowserFiltered || pivotsChanged) ? buildTree(filteredData, groupByCols, 0) : data;
             let html = '<table class="pivot-table" id="pivotTable"><thead><tr>';
             
             if (groupByCols.length === 0) {
@@ -874,7 +916,7 @@ def create_pivot_html(df,
             for (let i = 1; i < groupByCols.length; i++) html += '<td></td>';
             valueCols.forEach(col => {
                 const grandTotal = getAggregationResult(tree, col);
-                const config = pivotSorting[col] || {};
+                const config = formattingDict[col] || {};
                 const colorClass = config.format_colors ? (grandTotal < 0 ? 'negative' : (grandTotal > 0 ? 'positive' : '')) : '';
                 html += '<td class="value-cell ' + colorClass + '">' + formatValue(grandTotal, col) + '</td>';
             });
@@ -932,7 +974,44 @@ def create_pivot_html(df,
                 } else if (filter.operator !== 'none') {
                     dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">';
                 }
-                dropdownsHtml += '</div></div>';
+                dropdownsHtml += '</div>';
+                
+                // Aggregation Settings
+                const colConf = formattingDict[col] || {};
+                const currentAgg = colConf.agg || 'sum';
+                const currentWeights = colConf.weights_col || '';
+                const currentNullOnNulls = colConf.null_on_nulls || false;
+                
+                dropdownsHtml += '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">';
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Aggregation</label>';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'agg\\', this.value)">';
+                ['sum', 'avg', 'weighted_avg', 'min', 'max', 'count'].forEach(op => {
+                    dropdownsHtml += '<option value="' + op + '"' + (currentAgg === op ? ' selected' : '') + '>' + op.charAt(0).toUpperCase() + op.slice(1).replace('_', ' ') + '</option>';
+                });
+                dropdownsHtml += '</select>';
+                
+                dropdownsHtml += '<div id="weights-select-' + safeCol + '" style="display: ' + (currentAgg === 'weighted_avg' ? 'block' : 'none') + ';">';
+                
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Value Column (for Derived)</label>';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'val_col\\', this.value)">';
+                dropdownsHtml += '<option value="' + col + '">Use ' + col + '</option>';
+                allNumericCols.forEach(nc => {
+                    if (nc !== col) dropdownsHtml += '<option value="' + nc + '"' + (colConf.val_col === nc ? ' selected' : '') + '>' + nc + '</option>';
+                });
+                dropdownsHtml += '</select>';
+
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Weights Column</label>';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'weights_col\\', this.value)">';
+                dropdownsHtml += '<option value="">Select weight...</option>';
+                allNumericCols.forEach(nc => {
+                    dropdownsHtml += '<option value="' + nc + '"' + (currentWeights === nc ? ' selected' : '') + '>' + nc + '</option>';
+                });
+                dropdownsHtml += '</select></div>';
+                
+                dropdownsHtml += '<label class="filter-option" style="margin-top: 4px;"><input type="checkbox" ' + (currentNullOnNulls ? 'checked' : '') + ' onchange="updateNumericFilter(\\'' + col + '\\', \\'null_on_nulls\\', this.checked)"><span>null on nulls</span></label>';
+                dropdownsHtml += '</div>';
+                
+                dropdownsHtml += '</div>';
                 dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'numeric\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
                 dropdownsHtml += '</div>';
             });
@@ -1037,7 +1116,7 @@ def create_pivot_html(df,
                 
                 valueCols.forEach(col => {
                     const aggVal = getAggregationResult(nodeData, col);
-                    const config = pivotSorting[col] || {};
+                    const config = formattingDict[col] || {};
                     const colorClass = config.format_colors ? (aggVal < 0 ? 'negative' : (aggVal > 0 ? 'positive' : '')) : '';
                     html += '<td class="value-cell ' + colorClass + '">' + formatValue(aggVal, col) + '</td>';
                 });
@@ -1085,7 +1164,8 @@ def create_pivot_html(df,
         
         function formatValue(val, colName) {
             if (val === null || val === undefined || isNaN(val)) return '';
-            const fmt = formatting[colName];
+            const config = formattingDict[colName] || {};
+            const fmt = config.fmt || '';
             if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
             if (fmt === 'percent') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + '%';
             if (fmt === 'number') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
@@ -1297,7 +1377,7 @@ def pivot_api():
     config = request.json
     pivots = config.get('pivots', [])
     values = config.get('values', [])
-    pivot_sorting = config.get('pivot_sorting', {})
+    formatting_dict = config.get('formatting_dict', {})
     
     if GLOBAL_DF is None or not pivots:
         return jsonify({'tree': {}, 'flat_data': []})
@@ -1314,7 +1394,34 @@ def pivot_api():
                 aggs[col] = None
                 continue
                 
-            series = pd.to_numeric(group_df[col], errors='coerce')
+            series_col = conf.get('val_col', col)
+            if series_col not in group_df.columns:
+                aggs[col] = None
+                continue
+                
+            series = pd.to_numeric(group_df[series_col], errors='coerce')
+            
+            if agg_op == 'weighted_avg':
+                weights_col = conf.get('weights_col')
+                if not weights_col or weights_col not in group_df.columns:
+                    aggs[col] = None
+                    continue
+                weights_series = pd.to_numeric(group_df[weights_col], errors='coerce')
+                
+                if null_on_nulls and (series.isnull().any() or weights_series.isnull().any()):
+                    aggs[col] = None
+                    continue
+                
+                mask = series.notnull() & weights_series.notnull()
+                v = series[mask]
+                w = weights_series[mask]
+                
+                if w.empty or w.sum() == 0:
+                    aggs[col] = None
+                else:
+                    aggs[col] = float((v * w).sum() / w.sum())
+                continue
+
             if null_on_nulls and series.isnull().any():
                 aggs[col] = None
                 continue
@@ -1354,7 +1461,7 @@ def pivot_api():
         return result
 
     filtered_df = GLOBAL_DF.copy()
-    tree = build_tree_python(filtered_df, pivots, values, pivot_sorting)
+    tree = build_tree_python(filtered_df, pivots, values, formatting_dict)
     
     return jsonify({
         'tree': tree,
@@ -1401,32 +1508,33 @@ if __name__ == "__main__":
         value_cols=['Sales', 'PnL', 'Growth', 'Margin', 'Quantity', 'Profit'],
         default_pivots=['Region', 'Date'],
         default_values=['Sales', 'PnL'],
-        formatting={
-            'Sales': 'currency',
-            'PnL': 'currency',
-            'Growth': 'percent',
-            'Margin': 'decimal2',
-            'Quantity': 'number',
-            'Profit': 'currency'
-        },
-        # Custom sorting for dates and version numbers
-        pivot_sorting={
+        # Combined formatting, sorting, and aggregation configuration
+        formatting_dict={
             'Date': {
                 'type': 'date',
-                'format': 'M/D/YYYY',  # Format: M/D/YYYY or MM/DD/YYYY
-                'order': 'asc'  # Chronological order
+                'format': 'M/D/YYYY',
+                'order': 'asc'
             },
             'Version': {
                 'type': 'number',
-                'order': 'asc'  # 1.1, 2, 2.5, 3.2, 4.5, 5, 6.5, 7, 8, 9, 10, 12
+                'order': 'asc'
             },
             'Region': {
-                'order': 'desc'  # Descending alphabetical: West, South, North, East
+                'order': 'desc'
             },
-            'Sales': {'format_colors': True},
-            'PnL': {'format_colors': True, 'agg': 'avg'},
-            'Profit': {'format_colors': True, 'agg': 'max'},
-            'Growth': {'agg': 'min', 'null_on_nulls': True},
-            'Margin': {'agg': 'count'}
+            'Sales': {'format_colors': True, 'fmt': 'currency'},
+            'PnL': {'format_colors': True, 'agg': 'avg', 'fmt': 'currency'},
+            'Profit': {'format_colors': True, 'agg': 'max', 'fmt': 'currency'},
+            'Growth': {'agg': 'min', 'null_on_nulls': True, 'fmt': 'percent'},
+            'Margin': {'agg': 'count', 'fmt': 'decimal2'},
+            'Quantity': {'fmt': 'number'},
+            'WMargin': {
+                'agg': 'weighted_avg', 
+                'val_col': 'Margin', 
+                'weights_col': 'Quantity',
+                'null_on_nulls': True,
+                'default': True,
+                'fmt': 'decimal2'
+            }
         }
     )
