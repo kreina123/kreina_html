@@ -577,6 +577,26 @@ def create_pivot_html(df,
                 case 'min': return Math.min(...nonNullValues);
                 case 'max': return Math.max(...nonNullValues);
                 case 'count': return nonNullValues.length;
+                case 'median':
+                    nonNullValues.sort((a, b) => a - b);
+                    const mid = Math.floor(nonNullValues.length / 2);
+                    return nonNullValues.length % 2 !== 0 ? nonNullValues[mid] : (nonNullValues[mid - 1] + nonNullValues[mid]) / 2;
+                case 'mode':
+                    const frequency = {};
+                    let maxFreq = 0;
+                    let mode = null;
+                    nonNullValues.forEach(v => {
+                        frequency[v] = (frequency[v] || 0) + 1;
+                        if (frequency[v] > maxFreq) {
+                            maxFreq = frequency[v];
+                            mode = v;
+                        }
+                    });
+                    return mode;
+                case 'std':
+                    const mean = nonNullValues.reduce((a, b) => a + b, 0) / nonNullValues.length;
+                    const variance = nonNullValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / nonNullValues.length;
+                    return Math.sqrt(variance);
                 case 'weighted_avg':
                     const weightsCol = config.weights_col;
                     if (!weightsCol) return null;
@@ -986,7 +1006,7 @@ def create_pivot_html(df,
                 dropdownsHtml += '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">';
                 dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Aggregation</label>';
                 dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'agg\\', this.value)">';
-                ['sum', 'avg', 'weighted_avg', 'min', 'max', 'count'].forEach(op => {
+                ['sum', 'avg', 'weighted_avg', 'min', 'max', 'count', 'median', 'mode', 'std'].forEach(op => {
                     dropdownsHtml += '<option value="' + op + '"' + (currentAgg === op ? ' selected' : '') + '>' + op.charAt(0).toUpperCase() + op.slice(1).replace('_', ' ') + '</option>';
                 });
                 dropdownsHtml += '</select>';
@@ -1441,6 +1461,11 @@ def pivot_api():
             elif agg_op == 'min': aggs[col] = float(non_null.min())
             elif agg_op == 'max': aggs[col] = float(non_null.max())
             elif agg_op == 'count': aggs[col] = int(len(non_null))
+            elif agg_op == 'median': aggs[col] = float(non_null.median())
+            elif agg_op == 'mode':
+                 modes = non_null.mode()
+                 aggs[col] = float(modes.iloc[0]) if not modes.empty else None
+            elif agg_op == 'std': aggs[col] = float(non_null.std())
             else: aggs[col] = float(non_null.sum())
         return aggs
 
@@ -1517,9 +1542,9 @@ if __name__ == "__main__":
     create_pivot_html(
         sample_data, 
         pivot_cols=['Region', 'Product', 'Category', 'Date', 'Version'],
-        value_cols=['Sales', 'PnL', 'Growth', 'Margin', 'Quantity', 'Profit'],
+        value_cols=['Sales', 'PnL', 'Growth', 'Margin', 'Quantity', 'Profit', 'ModeMargin', 'StdMargin'],
         default_pivots=['Region', 'Date'],
-        default_values=['Sales', 'PnL'],
+        default_values=['Sales', 'PnL', 'Quantity', 'ModeMargin', 'StdMargin'],
         # Combined formatting, sorting, and aggregation configuration
         formatting_dict={
             'Date': {
@@ -1539,7 +1564,7 @@ if __name__ == "__main__":
             'Profit': {'format_colors': True, 'agg': 'max', 'fmt': 'currency'},
             'Growth': {'agg': 'min', 'null_on_nulls': True, 'fmt': 'percent'},
             'Margin': {'agg': 'count', 'fmt': 'decimal2'},
-            'Quantity': {'fmt': 'number'},
+            'Quantity': {'fmt': 'number', 'agg': 'median'},
             'WMargin': {
                 'agg': 'weighted_avg', 
                 'val_col': 'Margin', 
@@ -1547,6 +1572,8 @@ if __name__ == "__main__":
                 'null_on_nulls': True,
                 'default': True,
                 'fmt': 'decimal4'
-            }
+            },
+            'ModeMargin': {'val_col': 'Margin', 'agg': 'mode', 'fmt': 'decimal2'},
+            'StdMargin': {'val_col': 'Margin', 'agg': 'std', 'fmt': 'decimal4'}
         }
     )
