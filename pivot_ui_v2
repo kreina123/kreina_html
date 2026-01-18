@@ -1,1 +1,760 @@
+import pandas as pd
+import json
 
+def create_pivot_html(df, output_file='pivot_table.html', 
+                      pivot_cols=None, 
+                      value_cols=None, 
+                      default_pivots=None, 
+                      default_values=None,
+                      formatting=None):
+    """
+    Create an interactive HTML pivot table with expandable/collapsible groups.
+    Each pivot column gets its own column with individual filters.
+    """
+    
+    all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+    
+    if pivot_cols is None:
+        pivot_cols = all_non_numeric_cols
+    elif isinstance(pivot_cols, str):
+        pivot_cols = [pivot_cols]
+    
+    if value_cols is None:
+        value_cols = all_numeric_cols
+    elif isinstance(value_cols, str):
+        value_cols = [value_cols]
+    
+    if default_pivots is None and pivot_cols:
+        default_pivots = [pivot_cols[0]]
+    elif default_pivots is None:
+        default_pivots = []
+    elif isinstance(default_pivots, str):
+        default_pivots = [default_pivots]
+        
+    if default_values is None:
+        default_values = value_cols
+    elif isinstance(default_values, str):
+        default_values = [default_values]
+    
+    if formatting is None:
+        formatting = {}
+    
+    df_json = df.to_json(orient='records')
+    formatting_json = json.dumps(formatting)
+    
+    pivot_options = '\n'.join([
+        f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
+        for col in pivot_cols
+    ])
+    
+    value_options = '\n'.join([
+        f'<option value="{col}" {"selected" if col in default_values else ""}>{col}</option>' 
+        for col in value_cols
+    ])
+    
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agency PnL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fa; padding: 30px; color: #2c3e50; }
+        .container { max-width: 1600px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: visible; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px 30px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0; }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .button-group { display: flex; gap: 12px; align-items: center; }
+        .download-btn { background: white; color: #667eea; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .download-btn.secondary { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); }
+        .controls { padding: 24px 30px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: 600; font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px; }
+        .select-wrapper { display: flex; gap: 12px; align-items: stretch; }
+        select { padding: 10px 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white; font-family: inherit; flex: 1; }
+        select:focus { outline: none; border-color: #667eea; }
+        select[multiple] { min-height: 100px; }
+        .order-buttons { display: flex; flex-direction: column; gap: 4px; }
+        .order-btn { background: #667eea; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .order-btn:hover { background: #5568d3; }
+        .help-text { font-size: 12px; color: #6c757d; font-style: italic; }
+        
+        /* Toolbar */
+        .toolbar { padding: 12px 30px; background: #fff; border-bottom: 1px solid #e9ecef; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .toolbar-btn { background: #f8f9fa; color: #495057; border: 1px solid #dee2e6; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
+        .toolbar-btn:hover { background: #e9ecef; border-color: #adb5bd; }
+        .toolbar-btn.active { background: #667eea; color: white; border-color: #667eea; }
+        .toolbar-separator { width: 1px; height: 24px; background: #dee2e6; margin: 0 8px; }
+        
+        .table-wrapper { padding: 30px; overflow: visible; }
+        .pivot-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+        .pivot-table th { background: #495057; color: white; padding: 0; text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #343a40; position: relative; }
+        .th-content { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; }
+        .th-text { flex: 1; }
+        .pivot-table th.value-header .th-content { justify-content: flex-end; }
+        .pivot-table th.value-header .th-text { text-align: right; }
+        .filter-icon { cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 10px; opacity: 0.7; transition: all 0.2s; margin-left: 8px; }
+        .filter-icon:hover { opacity: 1; background: rgba(255,255,255,0.2); }
+        .filter-icon.active { opacity: 1; background: #667eea; }
+        .pivot-table td { padding: 10px 16px; border-bottom: 1px solid #e9ecef; background: white; white-space: nowrap; }
+        .group-row { cursor: pointer; user-select: none; transition: background-color 0.15s; }
+        .group-row:hover { background: #f1f3f5 !important; }
+        .group-row td { font-weight: 500; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+        .group-row.hidden { display: none; }
+        .toggle-icon { display: inline-block; width: 16px; margin-right: 6px; font-size: 10px; transition: transform 0.2s; color: #667eea; cursor: pointer; }
+        .group-row.collapsed .toggle-icon { transform: rotate(-90deg); }
+        .toggle-placeholder { display: inline-block; width: 22px; }
+        .value-cell { text-align: right; font-variant-numeric: tabular-nums; font-family: 'Consolas', 'Monaco', monospace; }
+        .level-0 td { font-weight: 600; background: #e9ecef !important; }
+        .level-1 td { font-weight: 500; background: #f1f3f5 !important; }
+        .level-2 td { background: #f8f9fa !important; }
+        .grand-total { background: #495057 !important; color: white !important; font-weight: 700; font-size: 14px; }
+        .grand-total td { background: #495057 !important; color: white !important; border-top: 3px solid #343a40; }
+        .positive { color: #28a745; } .negative { color: #dc3545; }
+        .cell-empty { color: #adb5bd; }
+        
+        /* Filter Dropdown */
+        .filter-dropdown { position: fixed; min-width: 240px; background: white; border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.2); z-index: 9999; display: none; color: #333; text-transform: none; letter-spacing: normal; font-weight: normal; max-height: 400px; }
+        .filter-dropdown.show { display: block; }
+        .filter-dropdown-header { padding: 14px 16px; border-bottom: 1px solid #e9ecef; display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; border-radius: 8px 8px 0 0; }
+        .filter-dropdown-header span { font-weight: 600; font-size: 13px; color: #495057; }
+        .filter-dropdown-close { cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 16px; color: #6c757d; line-height: 1; }
+        .filter-dropdown-close:hover { background: #e9ecef; color: #333; }
+        .filter-dropdown-body { padding: 14px 16px; max-height: 280px; overflow-y: auto; }
+        .filter-search { width: 100%; padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+        .filter-search:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+        .filter-actions-row { display: flex; gap: 16px; margin-bottom: 12px; font-size: 12px; }
+        .filter-actions-row span { color: #667eea; cursor: pointer; font-weight: 500; }
+        .filter-actions-row span:hover { text-decoration: underline; }
+        .filter-options { max-height: 180px; overflow-y: auto; }
+        .filter-option { display: flex; align-items: center; gap: 10px; padding: 8px 6px; font-size: 13px; cursor: pointer; border-radius: 4px; }
+        .filter-option:hover { background: #f1f3f5; }
+        .filter-option input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #667eea; }
+        .filter-dropdown-footer { padding: 14px 16px; border-top: 1px solid #e9ecef; display: flex; gap: 10px; justify-content: flex-end; background: #f8f9fa; border-radius: 0 0 8px 8px; }
+        .filter-apply-btn { background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .filter-apply-btn:hover { background: #5568d3; }
+        .filter-clear-btn { background: white; color: #dc3545; border: 1px solid #dc3545; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .filter-clear-btn:hover { background: #dc3545; color: white; }
+        .numeric-filter-select { width: 100%; padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }
+        .numeric-filter-input { width: 100%; padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+        .numeric-filter-input:focus { outline: none; border-color: #667eea; }
+        .numeric-range-inputs { display: flex; gap: 10px; align-items: center; }
+        .numeric-range-inputs input { flex: 1; margin-bottom: 0; }
+        .numeric-range-inputs span { color: #6c757d; font-size: 12px; }
+        
+        /* Download Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: white; border-radius: 12px; padding: 24px; min-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal h3 { margin-bottom: 16px; color: #333; font-size: 18px; }
+        .modal-option { display: flex; align-items: center; gap: 10px; padding: 12px; margin-bottom: 8px; background: #f8f9fa; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
+        .modal-option:hover { background: #e9ecef; }
+        .modal-option input { width: 18px; height: 18px; accent-color: #667eea; }
+        .modal-option label { cursor: pointer; font-size: 14px; }
+        .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+        .modal-btn { padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .modal-btn.primary { background: #667eea; color: white; border: none; }
+        .modal-btn.primary:hover { background: #5568d3; }
+        .modal-btn.secondary { background: white; color: #6c757d; border: 1px solid #dee2e6; }
+        .modal-btn.secondary:hover { background: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Agency PnL</h1>
+            <div class="button-group">
+                <button class="download-btn secondary" onclick="downloadFullData()">Download Full Data</button>
+                <button class="download-btn" onclick="showDownloadModal()">Download Current View</button>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="groupBy">Pivots</label>
+                <div class="select-wrapper">
+                    <select id="groupBy" multiple onmousedown="handleSelectMouseDown(event, 'groupBy')" onchange="handleSelectChange('groupBy')">
+                        ''' + pivot_options + '''
+                    </select>
+                    <div class="order-buttons">
+                        <button class="order-btn" onclick="movePivotUp()" title="Move selected pivot up in hierarchy">▲ Up</button>
+                        <button class="order-btn" onclick="movePivotDown()" title="Move selected pivot down in hierarchy">▼ Down</button>
+                    </div>
+                </div>
+                <div class="help-text">Click to toggle selection • Use Up/Down to reorder</div>
+            </div>
+            
+            <div class="control-group">
+                <label for="valueCols">Values</label>
+                <select id="valueCols" multiple onmousedown="handleSelectMouseDown(event, 'valueCols')" onchange="handleSelectChange('valueCols')">
+                    ''' + value_options + '''
+                </select>
+                <div class="help-text">Click to toggle selection</div>
+            </div>
+        </div>
+        
+        <div class="toolbar">
+            <button class="toolbar-btn" onclick="expandAll()" title="Expand all groups">
+                <span>⊞</span> Expand All
+            </button>
+            <button class="toolbar-btn" onclick="collapseAll()" title="Collapse all groups">
+                <span>⊟</span> Collapse All
+            </button>
+            <div class="toolbar-separator"></div>
+            <span style="font-size: 12px; color: #6c757d;" id="rowCount">0 rows</span>
+        </div>
+        
+        <div class="table-wrapper">
+            <div id="tableContainer"></div>
+        </div>
+    </div>
+    
+    <div id="filterDropdowns"></div>
+    
+    <!-- Download Modal -->
+    <div class="modal-overlay" id="downloadModal">
+        <div class="modal">
+            <h3>Download Options</h3>
+            <div class="modal-option">
+                <input type="checkbox" id="includeSubtotals" checked>
+                <label for="includeSubtotals">Include group subtotals</label>
+            </div>
+            <div class="modal-option">
+                <input type="checkbox" id="includeGrandTotal" checked>
+                <label for="includeGrandTotal">Include grand total</label>
+            </div>
+            <div class="modal-option">
+                <input type="checkbox" id="onlyVisible" checked>
+                <label for="onlyVisible">Only visible rows (respects expand/collapse)</label>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" onclick="closeDownloadModal()">Cancel</button>
+                <button class="modal-btn primary" onclick="downloadView()">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const data = ''' + df_json + ''';
+        const formatting = ''' + formatting_json + ''';
+        const collapsedGroups = new Set();
+        const pivotFilters = {};
+        const numericFilters = {};
+        let filteredData = [...data];
+        let allGroupPaths = [];
+        
+        // Handle mousedown to toggle selection in multi-select
+        function handleSelectMouseDown(event, selectId) {
+            const option = event.target;
+            if (option.tagName === 'OPTION') {
+                event.preventDefault();
+                // Toggle the selection
+                option.selected = !option.selected;
+                // Trigger the change handler
+                handleSelectChange(selectId);
+            }
+        }
+        
+        function handleSelectChange(selectId) {
+            collapsedGroups.clear();
+            if (selectId === 'groupBy') {
+                Object.keys(pivotFilters).forEach(k => delete pivotFilters[k]);
+                filteredData = [...data];
+            }
+            renderPivotTable();
+        }
+        
+        function expandAll() {
+            collapsedGroups.clear();
+            document.querySelectorAll('.group-row').forEach(row => {
+                row.classList.remove('collapsed');
+                row.classList.remove('hidden');
+            });
+        }
+        
+        function collapseAll() {
+            // Collapse only top-level groups (level 0)
+            document.querySelectorAll('.group-row[data-level="0"]').forEach(row => {
+                const path = row.getAttribute('data-path');
+                collapsedGroups.add(path);
+                row.classList.add('collapsed');
+            });
+            // Hide all non-level-0 rows
+            document.querySelectorAll('.group-row').forEach(row => {
+                const level = parseInt(row.getAttribute('data-level'));
+                if (level > 0) row.classList.add('hidden');
+            });
+        }
+        
+        function initFilters(cols) {
+            cols.forEach(col => {
+                if (!pivotFilters[col]) {
+                    const uniqueValues = [...new Set(data.map(row => {
+                        const val = row[col];
+                        return val !== null && val !== undefined ? String(val) : '(blank)';
+                    }))];
+                    pivotFilters[col] = new Set(uniqueValues);
+                }
+            });
+        }
+        
+        function applyFilters() {
+            filteredData = data.filter(row => {
+                for (const col in pivotFilters) {
+                    if (pivotFilters[col].size === 0) return false;
+                    const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
+                    if (!pivotFilters[col].has(val)) return false;
+                }
+                for (const col in numericFilters) {
+                    const filter = numericFilters[col];
+                    if (filter.operator === 'none') continue;
+                    const rowVal = parseFloat(row[col]) || 0;
+                    const val1 = parseFloat(filter.value1);
+                    const val2 = parseFloat(filter.value2);
+                    switch (filter.operator) {
+                        case 'equals': if (isNaN(val1) || rowVal !== val1) return false; break;
+                        case 'notEquals': if (isNaN(val1) || rowVal === val1) return false; break;
+                        case 'greaterThan': if (isNaN(val1) || rowVal <= val1) return false; break;
+                        case 'lessThan': if (isNaN(val1) || rowVal >= val1) return false; break;
+                        case 'between': if (isNaN(val1) || isNaN(val2) || rowVal < val1 || rowVal > val2) return false; break;
+                    }
+                }
+                return true;
+            });
+            collapsedGroups.clear();
+            renderPivotTable();
+        }
+        
+        function showFilterDropdown(col, type, event) {
+            event.stopPropagation();
+            closeAllDropdowns();
+            const dropdown = document.getElementById('dropdown-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+            if (dropdown) {
+                const rect = event.target.getBoundingClientRect();
+                dropdown.style.top = (rect.bottom + 5) + 'px';
+                dropdown.style.left = Math.max(10, Math.min(rect.left - 100, window.innerWidth - 260)) + 'px';
+                dropdown.classList.add('show');
+            }
+        }
+        
+        function closeAllDropdowns() {
+            document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+        }
+        
+        function toggleFilterValue(col, value) {
+            if (pivotFilters[col].has(value)) pivotFilters[col].delete(value);
+            else pivotFilters[col].add(value);
+        }
+        
+        function selectAll(col) {
+            const uniqueValues = [...new Set(data.map(row => {
+                const val = row[col];
+                return val !== null && val !== undefined ? String(val) : '(blank)';
+            }))];
+            pivotFilters[col] = new Set(uniqueValues);
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => cb.checked = true);
+        }
+        
+        function selectNone(col) {
+            pivotFilters[col] = new Set();
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => cb.checked = false);
+        }
+        
+        function searchFilter(input, col) {
+            const term = input.value.toLowerCase();
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' .filter-option').forEach(opt => {
+                const val = opt.getAttribute('data-value').toLowerCase();
+                opt.style.display = val.includes(term) ? 'flex' : 'none';
+            });
+        }
+        
+        function updateNumericFilter(col, field, value) {
+            if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
+            numericFilters[col][field] = value;
+            if (field === 'operator') renderNumericInputs(col);
+        }
+        
+        function renderNumericInputs(col) {
+            const container = document.getElementById('numeric-inputs-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+            if (!container) return;
+            const filter = numericFilters[col] || { operator: 'none', value1: '', value2: '' };
+            let html = '';
+            if (filter.operator === 'between') {
+                html = '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + (filter.value2 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)"></div>';
+            } else if (filter.operator !== 'none') {
+                html = '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">';
+            }
+            container.innerHTML = html;
+        }
+        
+        function clearColumnFilter(col, type) {
+            if (type === 'pivot') selectAll(col);
+            else numericFilters[col] = { operator: 'none', value1: '', value2: '' };
+            applyFilters();
+            closeAllDropdowns();
+        }
+        
+        function applyColumnFilter() {
+            applyFilters();
+            closeAllDropdowns();
+        }
+        
+        function isColumnFiltered(col, type) {
+            if (type === 'pivot') {
+                const allValues = [...new Set(data.map(row => {
+                    const val = row[col];
+                    return val !== null && val !== undefined ? String(val) : '(blank)';
+                }))];
+                return pivotFilters[col] && pivotFilters[col].size < allValues.length;
+            }
+            return numericFilters[col] && numericFilters[col].operator !== 'none';
+        }
+        
+        function renderPivotTable() {
+            const groupBySelect = document.getElementById('groupBy');
+            const groupByCols = Array.from(groupBySelect.options).filter(opt => opt.selected).map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+            
+            if (groupByCols.length === 0) {
+                document.getElementById('tableContainer').innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one pivot.</p>';
+                document.getElementById('filterDropdowns').innerHTML = '';
+                document.getElementById('rowCount').textContent = '0 rows';
+                return;
+            }
+            if (valueCols.length === 0) {
+                document.getElementById('tableContainer').innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one value column.</p>';
+                document.getElementById('filterDropdowns').innerHTML = '';
+                document.getElementById('rowCount').textContent = '0 rows';
+                return;
+            }
+            
+            initFilters(groupByCols);
+            allGroupPaths = [];
+            
+            const tree = buildTree(filteredData, groupByCols, 0);
+            let html = '<table class="pivot-table" id="pivotTable"><thead><tr>';
+            
+            groupByCols.forEach(col => {
+                const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
+                const filtered = isColumnFiltered(col, 'pivot');
+                html += '<th><div class="th-content"><span class="th-text">' + col + '</span>';
+                html += '<span class="filter-icon ' + (filtered ? 'active' : '') + '" onclick="showFilterDropdown(\\'' + col + '\\', \\'pivot\\', event)">☰</span></div></th>';
+            });
+            
+            valueCols.forEach(col => {
+                const filtered = isColumnFiltered(col, 'numeric');
+                html += '<th class="value-header"><div class="th-content"><span class="th-text">' + col + '</span>';
+                html += '<span class="filter-icon ' + (filtered ? 'active' : '') + '" onclick="showFilterDropdown(\\'' + col + '\\', \\'numeric\\', event)">☰</span></div></th>';
+            });
+            html += '</tr></thead><tbody>';
+            
+            html += renderTree(tree, groupByCols, valueCols, 0, '');
+            
+            html += '<tr class="grand-total" data-type="grand-total">';
+            html += '<td>Grand Total</td>';
+            for (let i = 1; i < groupByCols.length; i++) html += '<td></td>';
+            valueCols.forEach(col => {
+                const grandTotal = filteredData.reduce((sum, row) => sum + (parseFloat(row[col]) || 0), 0);
+                html += '<td class="value-cell">' + formatValue(grandTotal, col) + '</td>';
+            });
+            html += '</tr></tbody></table>';
+            
+            document.getElementById('tableContainer').innerHTML = html;
+            document.getElementById('rowCount').textContent = allGroupPaths.length + ' groups • ' + filteredData.length + ' records';
+            
+            // Build filter dropdowns
+            let dropdownsHtml = '';
+            
+            groupByCols.forEach(col => {
+                const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
+                const uniqueValues = [...new Set(data.map(row => {
+                    const val = row[col];
+                    return val !== null && val !== undefined ? String(val) : '(blank)';
+                }))].sort();
+                
+                dropdownsHtml += '<div class="filter-dropdown" id="dropdown-' + safeCol + '">';
+                dropdownsHtml += '<div class="filter-dropdown-header"><span>Filter: ' + col + '</span><span class="filter-dropdown-close" onclick="closeAllDropdowns()">✕</span></div>';
+                dropdownsHtml += '<div class="filter-dropdown-body">';
+                dropdownsHtml += '<input type="text" class="filter-search" placeholder="Search..." onkeyup="searchFilter(this, \\'' + col + '\\')">';
+                dropdownsHtml += '<div class="filter-actions-row"><span onclick="selectAll(\\'' + col + '\\')">Select All</span><span onclick="selectNone(\\'' + col + '\\')">Select None</span></div>';
+                dropdownsHtml += '<div class="filter-options" id="options-' + safeCol + '">';
+                uniqueValues.forEach(val => {
+                    const checked = !pivotFilters[col] || pivotFilters[col].has(val) ? 'checked' : '';
+                    const escaped = val.replace(/'/g, "\\\\'").replace(/"/g, '&quot;');
+                    dropdownsHtml += '<label class="filter-option" data-value="' + val + '"><input type="checkbox" ' + checked + ' onchange="toggleFilterValue(\\'' + col + '\\', \\'' + escaped + '\\')"><span>' + val + '</span></label>';
+                });
+                dropdownsHtml += '</div></div>';
+                dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'pivot\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
+                dropdownsHtml += '</div>';
+            });
+            
+            valueCols.forEach(col => {
+                const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
+                if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
+                const filter = numericFilters[col];
+                
+                dropdownsHtml += '<div class="filter-dropdown" id="dropdown-' + safeCol + '">';
+                dropdownsHtml += '<div class="filter-dropdown-header"><span>Filter: ' + col + '</span><span class="filter-dropdown-close" onclick="closeAllDropdowns()">✕</span></div>';
+                dropdownsHtml += '<div class="filter-dropdown-body">';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'operator\\', this.value)">';
+                dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
+                dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Equals</option>';
+                dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Not equals</option>';
+                dropdownsHtml += '<option value="greaterThan"' + (filter.operator === 'greaterThan' ? ' selected' : '') + '>Greater than</option>';
+                dropdownsHtml += '<option value="lessThan"' + (filter.operator === 'lessThan' ? ' selected' : '') + '>Less than</option>';
+                dropdownsHtml += '<option value="between"' + (filter.operator === 'between' ? ' selected' : '') + '>Between</option>';
+                dropdownsHtml += '</select>';
+                dropdownsHtml += '<div id="numeric-inputs-' + safeCol + '">';
+                if (filter.operator === 'between') {
+                    dropdownsHtml += '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + filter.value2 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)"></div>';
+                } else if (filter.operator !== 'none') {
+                    dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">';
+                }
+                dropdownsHtml += '</div></div>';
+                dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'numeric\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
+                dropdownsHtml += '</div>';
+            });
+            
+            document.getElementById('filterDropdowns').innerHTML = dropdownsHtml;
+            
+            document.querySelectorAll('.group-row').forEach(row => {
+                row.addEventListener('click', function(e) {
+                    if (e.target.closest('.filter-dropdown') || e.target.closest('.filter-icon')) return;
+                    e.stopPropagation();
+                    toggleGroup(this.getAttribute('data-path'));
+                });
+            });
+        }
+        
+        function buildTree(rows, groupCols, level) {
+            if (level >= groupCols.length) return rows;
+            const col = groupCols[level];
+            const groups = {};
+            rows.forEach(row => {
+                const key = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(row);
+            });
+            const result = {};
+            Object.keys(groups).sort().forEach(key => { result[key] = buildTree(groups[key], groupCols, level + 1); });
+            return result;
+        }
+        
+        function renderTree(node, groupCols, valueCols, level, parentPath) {
+            let html = '';
+            if (Array.isArray(node)) return html;
+            
+            Object.keys(node).forEach(key => {
+                const groupPath = parentPath ? parentPath + '>' + key : key;
+                allGroupPaths.push(groupPath);
+                const isCollapsed = collapsedGroups.has(groupPath);
+                const children = node[key];
+                const flatChildren = flattenTree(children);
+                const hasChildren = !Array.isArray(children);
+                
+                html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
+                
+                groupCols.forEach((col, colIdx) => {
+                    if (colIdx < level) {
+                        html += '<td class="cell-empty"></td>';
+                    } else if (colIdx === level) {
+                        if (hasChildren) {
+                            html += '<td><span class="toggle-icon">▼</span>' + key + '</td>';
+                        } else {
+                            html += '<td><span class="toggle-placeholder"></span>' + key + '</td>';
+                        }
+                    } else {
+                        html += '<td class="cell-empty"></td>';
+                    }
+                });
+                
+                valueCols.forEach(col => {
+                    const sum = flatChildren.reduce((acc, row) => acc + (parseFloat(row[col]) || 0), 0);
+                    const colorClass = sum < 0 ? 'negative' : (sum > 0 ? 'positive' : '');
+                    html += '<td class="value-cell ' + colorClass + '">' + formatValue(sum, col) + '</td>';
+                });
+                html += '</tr>';
+                
+                if (hasChildren) {
+                    html += renderTree(children, groupCols, valueCols, level + 1, groupPath);
+                }
+            });
+            
+            return html;
+        }
+        
+        function toggleGroup(path) {
+            if (collapsedGroups.has(path)) collapsedGroups.delete(path);
+            else collapsedGroups.add(path);
+            
+            const clickedRow = document.querySelector('[data-path="' + path + '"]');
+            if (clickedRow) clickedRow.classList.toggle('collapsed');
+            
+            document.querySelectorAll('.group-row').forEach(row => {
+                const rowPath = row.getAttribute('data-path');
+                if (rowPath && rowPath.startsWith(path + '>')) {
+                    let shouldBeVisible = true;
+                    const pathSegments = rowPath.split('>');
+                    for (let i = 0; i < pathSegments.length - 1; i++) {
+                        if (collapsedGroups.has(pathSegments.slice(0, i + 1).join('>'))) { 
+                            shouldBeVisible = false; 
+                            break; 
+                        }
+                    }
+                    row.classList.toggle('hidden', !shouldBeVisible);
+                }
+            });
+        }
+        
+        function flattenTree(node) {
+            if (Array.isArray(node)) return node;
+            let result = [];
+            Object.values(node).forEach(child => { result = result.concat(flattenTree(child)); });
+            return result;
+        }
+        
+        function formatValue(val, colName) {
+            if (val === null || val === undefined || isNaN(val)) return '';
+            const fmt = formatting[colName];
+            if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+            if (fmt === 'percent') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + '%';
+            if (fmt === 'number') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
+            if (fmt === 'decimal1') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(val);
+            if (fmt === 'decimal2') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+            return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+        }
+        
+        function movePivotUp() {
+            const select = document.getElementById('groupBy');
+            const selected = Array.from(select.selectedOptions);
+            if (selected.length !== 1) { alert('Select one pivot to reorder'); return; }
+            const opt = selected[0], prev = opt.previousElementSibling;
+            if (prev) { select.insertBefore(opt, prev); collapsedGroups.clear(); renderPivotTable(); }
+        }
+        
+        function movePivotDown() {
+            const select = document.getElementById('groupBy');
+            const selected = Array.from(select.selectedOptions);
+            if (selected.length !== 1) { alert('Select one pivot to reorder'); return; }
+            const opt = selected[0], next = opt.nextElementSibling;
+            if (next) { select.insertBefore(next, opt); select.insertBefore(opt, next.nextElementSibling); collapsedGroups.clear(); renderPivotTable(); }
+        }
+        
+        function showDownloadModal() {
+            document.getElementById('downloadModal').classList.add('show');
+        }
+        
+        function closeDownloadModal() {
+            document.getElementById('downloadModal').classList.remove('show');
+        }
+        
+        function downloadView() {
+            const table = document.getElementById('pivotTable');
+            if (!table) { closeDownloadModal(); return; }
+            
+            const includeSubtotals = document.getElementById('includeSubtotals').checked;
+            const includeGrandTotal = document.getElementById('includeGrandTotal').checked;
+            const onlyVisible = document.getElementById('onlyVisible').checked;
+            
+            const groupByCols = Array.from(document.getElementById('groupBy').options).filter(o => o.selected).map(o => o.value);
+            const valueCols = Array.from(document.getElementById('valueCols').selectedOptions).map(o => o.value);
+            
+            let rows = Array.from(table.querySelectorAll('tbody tr'));
+            
+            if (onlyVisible) {
+                rows = rows.filter(r => !r.classList.contains('hidden'));
+            }
+            
+            let csv = [groupByCols.concat(valueCols).map(c => '"' + c + '"').join(',')];
+            
+            rows.forEach(row => {
+                const rowType = row.getAttribute('data-type');
+                
+                // Skip based on options
+                if (rowType === 'grand-total' && !includeGrandTotal) return;
+                if (rowType === 'subtotal') {
+                    const level = parseInt(row.getAttribute('data-level'));
+                    const maxLevel = groupByCols.length - 1;
+                    // Only skip if it's NOT the leaf level and subtotals are disabled
+                    if (level < maxLevel && !includeSubtotals) return;
+                }
+                
+                const cells = Array.from(row.querySelectorAll('td'));
+                const rowData = cells.map(c => {
+                    let text = c.textContent.trim();
+                    // Remove toggle icons
+                    text = text.replace(/^[▼▲⊞⊟]\\s*/, '');
+                    return '"' + text.replace(/"/g, '""') + '"';
+                });
+                csv.push(rowData.join(','));
+            });
+            
+            downloadCSV(csv.join('\\n'), 'pivot_view_' + new Date().toISOString().split('T')[0] + '.csv');
+            closeDownloadModal();
+        }
+        
+        function downloadFullData() {
+            const cols = Object.keys(data[0] || {});
+            let csv = [cols.map(c => '"' + c + '"').join(',')];
+            data.forEach(row => csv.push(cols.map(c => '"' + (row[c] ?? '').toString().replace(/"/g, '""') + '"').join(',')));
+            downloadCSV(csv.join('\\n'), 'full_data_' + new Date().toISOString().split('T')[0] + '.csv');
+        }
+        
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        document.addEventListener('click', function(e) { 
+            if (!e.target.closest('.filter-dropdown') && !e.target.closest('.filter-icon')) closeAllDropdowns(); 
+        });
+        
+        renderPivotTable();
+    </script>
+</body>
+</html>
+'''
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"Pivot table saved to {output_file}")
+
+
+if __name__ == "__main__":
+    sample_data = pd.DataFrame({
+        'Region': ['East', 'East', 'West', 'West', 'East', 'West', 'North', 'North'],
+        'Product': ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B'],
+        'Category': ['Electronics', 'Electronics', 'Electronics', 'Furniture', 'Furniture', 'Furniture', 'Electronics', 'Furniture'],
+        'Sales': [100000, 150000, 200000, 120000, 180000, 140000, 90000, 110000],
+        'Quantity': [10, 15, 20, 12, 18, 14, 9, 11],
+        'Profit': [30000, 45000, 60000, 36000, 54000, 42000, 27000, 33000],
+        'PnL': [25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000],
+        'Growth': [5.5, 8.2, 12.0, 6.5, 9.8, 7.0, 4.0, 6.0],
+        'Margin': [0.255, 0.382, 0.520, 0.285, 0.458, 0.350, 0.220, 0.280]
+    })
+    
+    create_pivot_html(
+        sample_data, 
+        output_file='pivot_table.html',
+        pivot_cols=['Region', 'Product', 'Category'],
+        value_cols=['Sales', 'PnL', 'Growth', 'Margin'],
+        default_pivots=['Region', 'Product'],
+        default_values=['Sales', 'PnL'],
+        formatting={
+            'Sales': 'currency',
+            'PnL': 'currency',
+            'Growth': 'percent',
+            'Margin': 'decimal2',
+            'Quantity': 'number',
+            'Profit': 'decimal1'
+        }
+    )
