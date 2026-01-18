@@ -1,30 +1,76 @@
 import pandas as pd
 import json
+import os
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 
-def create_pivot_html(df, output_file='pivot_table.html', 
+app = Flask(__name__)
+CORS(app)
+
+GLOBAL_DF = None
+PIVOT_CONFIG = {}
+
+def sanitize_for_json(obj):
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, (float, np.float64, np.float32)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+    return obj
+
+def create_pivot_html(df, 
                       pivot_cols=None, 
                       value_cols=None, 
                       default_pivots=None, 
                       default_values=None,
-                      formatting=None,
-                      pivot_sorting=None):
+                      formatting_dict=None,
+                      port=5001,
+                      debug=False):
     """
-    Create an interactive HTML pivot table with expandable/collapsible groups.
-    Each pivot column gets its own column with individual filters.
+    Create an interactive HTML pivot table that fetches data from a Flask API.
     """
+    global GLOBAL_DF, PIVOT_CONFIG
+    GLOBAL_DF = df
+    PIVOT_CONFIG = {
+        'pivot_cols': pivot_cols,
+        'value_cols': value_cols,
+        'default_pivots': default_pivots,
+        'default_values': default_values,
+        'formatting_dict': formatting_dict
+    }
     
     all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
     all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
     
+    # Add derived columns from formatting_dict to list of available numeric columns
+    # This ensures they show up in the "Value Column" and "Weights Column" selectors
+    if formatting_dict:
+        for col, conf in formatting_dict.items():
+            if isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
+                if col not in all_numeric_cols:
+                    all_numeric_cols.append(col)
+
     if pivot_cols is None:
         pivot_cols = all_non_numeric_cols
     elif isinstance(pivot_cols, str):
         pivot_cols = [pivot_cols]
     
     if value_cols is None:
-        value_cols = all_numeric_cols
+        value_cols = [c for c in all_numeric_cols if c in df.columns]
     elif isinstance(value_cols, str):
         value_cols = [value_cols]
+    
+    # Ensure any requested derived columns are in value_cols
+    if formatting_dict:
+        for col, conf in formatting_dict.items():
+            if isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
+                if col not in value_cols:
+                    value_cols.append(col)
+                if default_values is not None and col not in default_values and conf.get('default'):
+                     default_values.append(col)
     
     if default_pivots is None and pivot_cols:
         default_pivots = [pivot_cols[0]]
@@ -37,16 +83,13 @@ def create_pivot_html(df, output_file='pivot_table.html',
         default_values = value_cols
     elif isinstance(default_values, str):
         default_values = [default_values]
-    
-    if formatting is None:
-        formatting = {}
-    
-    if pivot_sorting is None:
-        pivot_sorting = {}
-    
-    df_json = df.to_json(orient='records')
-    formatting_json = json.dumps(formatting)
-    pivot_sorting_json = json.dumps(pivot_sorting)
+
+    if formatting_dict is None:
+        formatting_dict = {}
+
+    # df_json = df.to_json(orient='records') # Removed to save memory
+    formatting_dict_json = json.dumps(formatting_dict)
+    numeric_cols_json = json.dumps(all_numeric_cols)
     
     pivot_options = '\n'.join([
         f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
@@ -129,6 +172,39 @@ def create_pivot_html(df, output_file='pivot_table.html',
         .value-cell { text-align: right; font-variant-numeric: tabular-nums; }
         .level-0 td { background: #f0f0f0 !important; font-weight: 600; }
         .positive { color: #008000; } .negative { color: #d00000; }
+        .table-container { 
+            position: relative;
+            flex-grow: 1; 
+            overflow: auto; 
+            background: #fff; 
+            border: 1px solid #dee2e6; 
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .table-container.out-of-sync .virtual-scroll-container {
+            filter: blur(5px);
+            opacity: 0.6;
+        }
+        .sync-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            color: #333;
+            font-weight: 600;
+            z-index: 1001;
+            display: none;
+            white-space: nowrap;
+            border: 1px solid #dee2e6;
+            text-align: center;
+        }
+        .table-container.out-of-sync .sync-overlay {
+            display: block;
+        }
         .cell-empty { background: #fcfcfc; }
         
         /* Filter Dropdown */
@@ -236,7 +312,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 <span>📋</span> Copy View to Clipboard
             </button>
             <label class="toolbar-item" title="Toggle group subtotal rows in export">
-                <input type="checkbox" id="includeSubtotals">
+                <input type="checkbox" id="includeSubtotals" checked>
                 Include Group Subtotals
             </label>
             <div class="toolbar-separator"></div>
@@ -247,7 +323,11 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 <span>📊</span> Download Full Data
             </button>
             <div class="toolbar-separator"></div>
-            <span style="font-size: 12px; color: #6c757d;" id="rowCount">0 rows</span>
+            <button class="toolbar-btn" style="background: #667eea; color: white;" onclick="fetchPivotData()" id="queryBtn" title="Fetch aggregated data from server">
+                <span>🔍</span> Query Data
+            </button>
+            <div class="toolbar-separator"></div>
+            <span style="font-size: 12px; color: #6c757d;" id="rowCount">Ready</span>
         </div>
         
         <div id="toast" class="toast">Copied to clipboard!</div>
@@ -257,8 +337,11 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 <div class="loading-spinner"></div>
                 <span class="loading-text">Processing data...</span>
             </div>
-            <div class="virtual-scroll-container" id="scrollContainer">
-                <div id="tableContainer"></div>
+            <div class="table-container" id="tableContainer">
+                <div class="sync-overlay">Query Data to Update View</div>
+                <div class="virtual-scroll-container" id="scrollContainer">
+                    <div id="pivotTableContent"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -270,7 +353,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
         <div class="modal">
             <h3>Download Options</h3>
             <div class="modal-option">
-                <input type="checkbox" id="includeGrandTotal" checked>
+                <input type="checkbox" id="includeGrandTotal">
                 <label for="includeGrandTotal">Include grand total</label>
             </div>
             <div class="modal-option">
@@ -285,14 +368,125 @@ def create_pivot_html(df, output_file='pivot_table.html',
     </div>
 
     <script>
-        const data = ''' + df_json + ''';
-        const formatting = ''' + formatting_json + ''';
-        const pivotSorting = ''' + pivot_sorting_json + ''';
+        let data = {}; // Aggregated Tree Object
+        let allRecords = []; // Original flat records from server
+        let filteredData = []; // Filtered flat records
+        let allGroupPaths = [];
+        let lastQueriedPivots = [];
+        let lastQueriedValues = [];
+        let isSyncing = false;
+        const formattingDict = ''' + formatting_dict_json + ''';
+        const allNumericCols = ''' + numeric_cols_json + ''';
         const collapsedGroups = new Set();
         const pivotFilters = {};
         const numericFilters = {};
-        let filteredData = [...data];
-        let allGroupPaths = [];
+
+        async function fetchPivotData() {
+            const groupBySelect = document.getElementById('groupBy');
+            const pivots = Array.from(groupBySelect.options).filter(opt => opt.selected).map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const values = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+
+            if (pivots.length === 0 || values.length === 0) {
+                alert('Please select at least one pivot and one value column.');
+                return;
+            }
+
+            showLoading();
+            document.getElementById('queryBtn').disabled = true;
+            document.getElementById('queryBtn').textContent = 'Querying...';
+
+            try {
+                const apiHost = window.location.protocol === 'file:' ? 'http://localhost:' + ''' + str(port) + ''' : '';
+                const response = await fetch(apiHost + '/api/pivot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pivots, values, formatting_dict: formattingDict })
+                });
+                
+                if (!response.ok) throw new Error('API request failed');
+                
+                const result = await response.json();
+                
+                // Reset filters on new data query
+                Object.keys(pivotFilters).forEach(k => delete pivotFilters[k]);
+                Object.keys(numericFilters).forEach(k => delete numericFilters[k]);
+                
+                data = result.tree || {};
+                allRecords = result.all_records || []; // Full records (or larger sample)
+                filteredData = [...allRecords];
+                grandTotalData = data._agg || {};
+                
+                lastQueriedPivots = [...pivots];
+                lastQueriedValues = [...values];
+                checkSyncState();
+                
+                collapsedGroups.clear();
+                renderPivotTable();
+                
+                // Auto-collapse if tree is large (> 1000 rows)
+                const totalRows = countTreeRows(data);
+                if (totalRows > 1000) {
+                    collapseAll();
+                    showToast('Large dataset detected: Auto-collapsed pivots');
+                } else {
+                    showToast('Data updated from server');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Failed to fetch data: ' + err.message);
+            } finally {
+                hideLoading();
+                isSyncing = false;
+                document.getElementById('queryBtn').disabled = false;
+                document.getElementById('queryBtn').textContent = 'Query Data';
+            }
+        }
+
+        function checkSyncState() {
+            const groupBySelect = document.getElementById('groupBy');
+            const currentPivots = Array.from(groupBySelect.options).filter(opt => opt.selected).map(opt => opt.value);
+            const valueColsSelect = document.getElementById('valueCols');
+            const currentValues = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
+
+            const container = document.getElementById('tableContainer');
+            
+            // Logic for blurring (grey out):
+            // 1. Pivots: any currently selected pivot was NOT in the last query -> Blur
+            // 2. Values: any currently selected value was NOT in the last query -> Blur
+            // 3. Subsets of the last query do NOT trigger blur.
+            
+            const pivotsSubset = currentPivots.every(p => lastQueriedPivots.includes(p));
+            const valuesSubset = currentValues.every(v => lastQueriedValues.includes(v));
+            
+            const isOutOfSync = !pivotsSubset || !valuesSubset;
+            
+            if (isOutOfSync) {
+                container.classList.add('out-of-sync');
+            } else {
+                container.classList.remove('out-of-sync');
+            }
+            
+            return isOutOfSync;
+        }
+
+        function countTreeRows(node) {
+            if (!node || !node._groups) return 0;
+            let count = 0;
+            const keys = Object.keys(node._groups);
+            count += keys.length;
+            keys.forEach(key => {
+                count += countTreeRows(node._groups[key]);
+            });
+            return count;
+        }
+        
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            // We don't render until first query
+            document.getElementById('pivotTableContent').innerHTML = '<p style="padding: 20px; color: #6c757d;">Select pivots and values, then click "Query Data".</p>';
+            checkSyncState(); // Check initial sync state
+        });
         
         // Parse date string using format pattern
         function parseDateWithFormat(dateStr, format) {
@@ -328,7 +522,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
         
         // Get sort comparator for a column
         function getSortComparator(col) {
-            const config = pivotSorting[col] || {};
+            const config = formattingDict[col] || {};
             const sortType = config.type || 'text';
             const order = config.order || 'asc';
             const dateFormat = config.format || 'MM/DD/YYYY';
@@ -362,9 +556,83 @@ def create_pivot_html(df, output_file='pivot_table.html',
             }
         }
         
+        // Get aggregation result based on node or calculated rows
+        function getAggregationResult(node, col) {
+            // Priority 1: Server-precalculated aggregation
+            if (node && node._agg && node._agg[col] !== undefined) {
+                return node._agg[col];
+            }
+            
+            // Priority 2: Fallback to client-side calc if records are available
+            const rows = Array.isArray(node) ? node : (node && node._groups ? flattenTree(node) : []);
+            if (rows.length === 0) return null;
+
+            const config = formattingDict[col] || {};
+            const aggOp = config.agg || 'sum';
+            const nullOnNulls = config.null_on_nulls || false;
+            const valCol = config.val_col || col;
+            
+            const values = rows.map(r => {
+                const val = r[valCol];
+                return (val === null || val === undefined) ? null : parseFloat(val);
+            });
+            
+            const hasNulls = values.some(v => v === null);
+            if (nullOnNulls && hasNulls) return null;
+            
+            const nonNullValues = values.filter(v => v !== null && !isNaN(v));
+            if (nonNullValues.length === 0) return null;
+            
+            switch (aggOp) {
+                case 'avg': return nonNullValues.reduce((a, b) => a + b, 0) / nonNullValues.length;
+                case 'min': return Math.min(...nonNullValues);
+                case 'max': return Math.max(...nonNullValues);
+                case 'count': return nonNullValues.length;
+                case 'median':
+                    nonNullValues.sort((a, b) => a - b);
+                    const mid = Math.floor(nonNullValues.length / 2);
+                    return nonNullValues.length % 2 !== 0 ? nonNullValues[mid] : (nonNullValues[mid - 1] + nonNullValues[mid]) / 2;
+                case 'mode':
+                    const frequency = {};
+                    let maxFreq = 0;
+                    let mode = null;
+                    nonNullValues.forEach(v => {
+                        frequency[v] = (frequency[v] || 0) + 1;
+                        if (frequency[v] > maxFreq) {
+                            maxFreq = frequency[v];
+                            mode = v;
+                        }
+                    });
+                    return mode;
+                case 'std':
+                    const mean = nonNullValues.reduce((a, b) => a + b, 0) / nonNullValues.length;
+                    const variance = nonNullValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / nonNullValues.length;
+                    return Math.sqrt(variance);
+                case 'weighted_avg':
+                    const weightsCol = config.weights_col;
+                    if (!weightsCol) return null;
+                    const weights = rows.map(r => {
+                        const val = r[weightsCol];
+                        return (val === null || val === undefined) ? null : parseFloat(val);
+                    });
+                    if (nullOnNulls && weights.some(v => v === null)) return null;
+                    
+                    let weightedSum = 0;
+                    let weightTotal = 0;
+                    for (let i = 0; i < values.length; i++) {
+                        if (values[i] !== null && weights[i] !== null) {
+                            weightedSum += values[i] * weights[i];
+                            weightTotal += weights[i];
+                        }
+                    }
+                    return weightTotal === 0 ? null : weightedSum / weightTotal;
+                default: return nonNullValues.reduce((a, b) => a + b, 0);
+            }
+        }
+        
         // Large dataset handling
         const LARGE_DATA_THRESHOLD = 5000;
-        const isLargeDataset = data.length > LARGE_DATA_THRESHOLD;
+        const isLargeDataset = false; // We use API for large data, virtual scroll still works on rendered rows.
         
         function showLoading() {
             document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -398,9 +666,10 @@ def create_pivot_html(df, output_file='pivot_table.html',
             collapsedGroups.clear();
             if (selectId === 'groupBy') {
                 Object.keys(pivotFilters).forEach(k => delete pivotFilters[k]);
-                filteredData = [...data];
+                // filteredData = [...data]; // This is wrong now, filteredData is already correct from API
             }
             renderPivotTable();
+            checkSyncState(); // Check sync state after select change
         }
         
         function expandAll() {
@@ -428,7 +697,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
         function initFilters(cols) {
             cols.forEach(col => {
                 if (!pivotFilters[col]) {
-                    const uniqueValues = [...new Set(data.map(row => {
+                    const uniqueValues = [...new Set(allRecords.map(row => {
                         const val = row[col];
                         return val !== null && val !== undefined ? String(val) : '(blank)';
                     }))];
@@ -436,26 +705,18 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 }
             });
         }
-        
-        window.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
-                const openDropdown = document.querySelector('.filter-dropdown.show');
-                if (openDropdown) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    applyColumnFilter();
-                }
-            }
-        }, true);
-        
-        function applyFilters() {
-            filteredData = data.filter(row => {
+
+        function getFilteredData(excludeCol = null) {
+            return allRecords.filter(row => {
+                // Pivot Filters
                 for (const col in pivotFilters) {
-                    if (pivotFilters[col].size === 0) return false;
+                    if (col === excludeCol) continue;
                     const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
                     if (!pivotFilters[col].has(val)) return false;
                 }
+                // Numeric Filters
                 for (const col in numericFilters) {
+                    if (col === excludeCol) continue;
                     const filter = numericFilters[col];
                     if (filter.operator === 'none') continue;
                     const rowVal = parseFloat(row[col]) || 0;
@@ -471,7 +732,31 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 }
                 return true;
             });
-            collapsedGroups.clear();
+        }
+        
+        window.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                const openDropdown = document.querySelector('.filter-dropdown.show');
+                if (openDropdown) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // If focusing on a decimal input, just close the modal.
+                    // The surgical update was already triggered by 'onchange'.
+                    const active = document.activeElement;
+                    const isDecimal = active && active.tagName === 'INPUT' && active.type === 'number' && active.parentElement.querySelector('label')?.textContent.includes('Decimals');
+                    
+                    if (isDecimal) {
+                        closeAllDropdowns();
+                    } else {
+                        applyColumnFilter();
+                    }
+                }
+            }
+        }, true);
+        
+        function applyFilters() {
+            filteredData = getFilteredData();
             renderPivotTable();
         }
         
@@ -519,12 +804,15 @@ def create_pivot_html(df, output_file='pivot_table.html',
         }
         
         function selectAll(col) {
-            const uniqueValues = [...new Set(data.map(row => {
+            const contextData = getFilteredData(col);
+            const availableValues = [...new Set(contextData.map(row => {
                 const val = row[col];
                 return val !== null && val !== undefined ? String(val) : '(blank)';
             }))];
-            pivotFilters[col] = new Set(uniqueValues);
-            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => cb.checked = true);
+            availableValues.forEach(val => pivotFilters[col].add(val));
+            document.querySelectorAll('#options-' + col.replace(/[^a-zA-Z0-9]/g, '_') + ' input').forEach(cb => {
+                if (cb.offsetParent !== null) cb.checked = true; // Only visible ones
+            });
         }
         
         function selectNone(col) {
@@ -542,8 +830,32 @@ def create_pivot_html(df, output_file='pivot_table.html',
         
         function updateNumericFilter(col, field, value) {
             if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
-            numericFilters[col][field] = value;
-            if (field === 'operator') renderNumericInputs(col);
+            if (!formattingDict[col]) formattingDict[col] = {};
+            
+            if (field === 'agg' || field === 'weights_col' || field === 'null_on_nulls' || field === 'val_col' || field === 'decimals') {
+                if (field === 'decimals') {
+                    const currentFmt = formattingDict[col].fmt || '';
+                    const prefix = currentFmt.startsWith('percent') ? 'percent' : 'decimal';
+                    formattingDict[col].fmt = prefix + value;
+                    // Update ONLY the value cells for this column
+                    document.querySelectorAll('td.value-cell[data-col="' + col + '"]').forEach(cell => {
+                        const raw = cell.getAttribute('data-raw');
+                        if (raw && raw !== '') {
+                            cell.textContent = formatValue(parseFloat(raw), col);
+                        }
+                    });
+                } else {
+                    formattingDict[col][field] = value;
+                    if (field === 'agg') {
+                        const weightsSelect = document.getElementById('weights-select-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
+                        if (weightsSelect) weightsSelect.style.display = value === 'weighted_avg' ? 'block' : 'none';
+                    }
+                    checkSyncState(); // Changing aggregation requires re-query
+                }
+            } else {
+                numericFilters[col][field] = value;
+                if (field === 'operator') renderNumericInputs(col);
+            }
         }
         
         function renderNumericInputs(col) {
@@ -573,7 +885,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
         
         function isColumnFiltered(col, type) {
             if (type === 'pivot') {
-                const allValues = [...new Set(data.map(row => {
+                const allValues = [...new Set(allRecords.map(row => {
                     const val = row[col];
                     return val !== null && val !== undefined ? String(val) : '(blank)';
                 }))];
@@ -599,15 +911,16 @@ def create_pivot_html(df, output_file='pivot_table.html',
             const valueColsSelect = document.getElementById('valueCols');
             const valueCols = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
             
-            if (groupByCols.length === 0) {
-                document.getElementById('tableContainer').innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one pivot.</p>';
-                document.getElementById('filterDropdowns').innerHTML = '';
-                document.getElementById('rowCount').textContent = '0 rows';
+            const target = document.getElementById('pivotTableContent');
+            
+            if (!data || (typeof data === 'object' && !data._groups && !data._agg)) {
+                target.innerHTML = '<p style="padding: 20px; color: #6c757d;">No data loaded. Click "Query Data" to fetch results.</p>';
+                document.getElementById('rowCount').textContent = 'Ready';
                 hideLoading();
                 return;
             }
             if (valueCols.length === 0) {
-                document.getElementById('tableContainer').innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one value column.</p>';
+                target.innerHTML = '<p style="padding: 20px; color: #6c757d;">Please select at least one value column.</p>';
                 document.getElementById('filterDropdowns').innerHTML = '';
                 document.getElementById('rowCount').textContent = '0 rows';
                 hideLoading();
@@ -617,9 +930,15 @@ def create_pivot_html(df, output_file='pivot_table.html',
             initFilters(groupByCols);
             allGroupPaths = [];
             
-            const tree = buildTree(filteredData, groupByCols, 0);
+            // If filtered or pivots changed, build local tree. If not, use server tree.
+            const isBrowserFiltered = filteredData.length < allRecords.length;
+            const pivotsChanged = JSON.stringify(groupByCols) !== JSON.stringify(lastQueriedPivots);
+            const tree = (isBrowserFiltered || pivotsChanged) ? buildTree(filteredData, groupByCols, 0) : data;
             let html = '<table class="pivot-table" id="pivotTable"><thead><tr>';
             
+            if (groupByCols.length === 0) {
+                html += '<th></th>'; // Placeholder for "Grand Total" label
+            }
             groupByCols.forEach(col => {
                 const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
                 const filtered = isColumnFiltered(col, 'pivot');
@@ -650,22 +969,23 @@ def create_pivot_html(df, output_file='pivot_table.html',
             html += '<td>Grand Total</td>';
             for (let i = 1; i < groupByCols.length; i++) html += '<td></td>';
             valueCols.forEach(col => {
-                const grandTotal = filteredData.reduce((sum, row) => sum + (parseFloat(row[col]) || 0), 0);
-                const config = pivotSorting[col] || {};
+                const grandTotal = getAggregationResult(tree, col);
+                const config = formattingDict[col] || {};
                 const colorClass = config.format_colors ? (grandTotal < 0 ? 'negative' : (grandTotal > 0 ? 'positive' : '')) : '';
-                html += '<td class="value-cell ' + colorClass + '">' + formatValue(grandTotal, col) + '</td>';
+                html += '<td class="value-cell ' + colorClass + '" data-col="' + col + '" data-raw="' + (grandTotal ?? '') + '">' + formatValue(grandTotal, col) + '</td>';
             });
             html += '</tr></tbody></table>';
             
-            document.getElementById('tableContainer').innerHTML = html;
-            document.getElementById('rowCount').textContent = allGroupPaths.length + ' groups • ' + filteredData.length + ' records';
+            target.innerHTML = html;
+            document.getElementById('rowCount').textContent = 'Aggregated view loaded';
             
             // Build filter dropdowns
             let dropdownsHtml = '';
             
             groupByCols.forEach(col => {
                 const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
-                const uniqueValues = [...new Set(data.map(row => {
+                const contextData = getFilteredData(col);
+                const uniqueValues = [...new Set(contextData.map(row => {
                     const val = row[col];
                     return val !== null && val !== undefined ? String(val) : '(blank)';
                 }))].sort(getSortComparator(col));
@@ -708,7 +1028,54 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 } else if (filter.operator !== 'none') {
                     dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">';
                 }
-                dropdownsHtml += '</div></div>';
+                dropdownsHtml += '</div>';
+                
+                // Aggregation Settings
+                const colConf = formattingDict[col] || {};
+                const currentAgg = colConf.agg || 'sum';
+                const currentWeights = colConf.weights_col || '';
+                const currentNullOnNulls = colConf.null_on_nulls || false;
+                
+                dropdownsHtml += '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">';
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Aggregation</label>';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'agg\\', this.value)">';
+                ['sum', 'avg', 'weighted_avg', 'min', 'max', 'count', 'median', 'mode', 'std'].forEach(op => {
+                    dropdownsHtml += '<option value="' + op + '"' + (currentAgg === op ? ' selected' : '') + '>' + op.charAt(0).toUpperCase() + op.slice(1).replace('_', ' ') + '</option>';
+                });
+                dropdownsHtml += '</select>';
+                
+                dropdownsHtml += '<div id="weights-select-' + safeCol + '" style="display: ' + (currentAgg === 'weighted_avg' ? 'block' : 'none') + ';">';
+                
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Value Column (for Derived)</label>';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'val_col\\', this.value)">';
+                dropdownsHtml += '<option value="' + col + '">Use ' + col + '</option>';
+                allNumericCols.forEach(nc => {
+                    if (nc !== col) dropdownsHtml += '<option value="' + nc + '"' + (colConf.val_col === nc ? ' selected' : '') + '>' + nc + '</option>';
+                });
+                dropdownsHtml += '</select>';
+
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Weights Column</label>';
+                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'weights_col\\', this.value)">';
+                dropdownsHtml += '<option value="">Select weight...</option>';
+                allNumericCols.forEach(nc => {
+                    dropdownsHtml += '<option value="' + nc + '"' + (currentWeights === nc ? ' selected' : '') + '>' + nc + '</option>';
+                });
+                dropdownsHtml += '</select></div>';
+                
+                dropdownsHtml += '<label class="filter-option" style="margin-top: 4px;"><input type="checkbox" ' + (currentNullOnNulls ? 'checked' : '') + ' onchange="updateNumericFilter(\\'' + col + '\\', \\'null_on_nulls\\', this.checked)"><span>null on nulls</span></label>';
+                
+                // Decimal Control
+                const fmt = colConf.fmt || '';
+                const decMatch = fmt.match(/decimal(\d+)/);
+                const decs = decMatch ? parseInt(decMatch[1]) : 2;
+                dropdownsHtml += '<div style="margin-top: 8px;">';
+                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Display Decimals</label>';
+                dropdownsHtml += '<input type="number" class="numeric-filter-input" min="0" max="10" value="' + decs + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'decimals\\', this.value)">';
+                dropdownsHtml += '</div>';
+                
+                dropdownsHtml += '</div>';
+                
+                dropdownsHtml += '</div>';
                 dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'numeric\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
                 dropdownsHtml += '</div>';
             });
@@ -737,11 +1104,12 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(row);
             });
-            // Use sorted keys array to preserve custom sort order (avoids JS object key reordering)
             const comparator = getSortComparator(col);
             const sortedKeys = Object.keys(groups).sort(comparator);
             const result = { _groups: {}, _sortedKeys: sortedKeys };
-            sortedKeys.forEach(key => { result._groups[key] = buildTree(groups[key], groupCols, level + 1); });
+            sortedKeys.forEach(key => { 
+                result._groups[key] = buildTree(groups[key], groupCols, level + 1); 
+            });
             return result;
         }
 
@@ -766,16 +1134,10 @@ def create_pivot_html(df, output_file='pivot_table.html',
                       return result * (sortDir === 'asc' ? 1 : -1);
                  });
             } else if (isValueSort) {
-                // Pre-calculate sums to avoid repeated recalculations during sort
-                // This is a simple optimization
-                const sums = {};
-                node._sortedKeys.forEach(key => {
-                    const flat = flattenTree(node._groups[key]);
-                    sums[key] = flat.reduce((acc, row) => acc + (parseFloat(row[sortCol]) || 0), 0);
-                });
-                
                 node._sortedKeys.sort((a, b) => {
-                    return (sums[a] - sums[b]) * (sortDir === 'asc' ? 1 : -1);
+                    const valA = getAggregationResult(node._groups[a], sortCol) ?? -Infinity;
+                    const valB = getAggregationResult(node._groups[b], sortCol) ?? -Infinity;
+                    return (valA - valB) * (sortDir === 'asc' ? 1 : -1);
                 });
             }
             
@@ -785,9 +1147,9 @@ def create_pivot_html(df, output_file='pivot_table.html',
             });
         }
 
-        function renderTree(node, groupCols, valueCols, level, parentPath) {
+        function renderTree(node, groupCols, valueCols, level, parentPath, isParentCollapsed = false) {
             let html = '';
-            if (Array.isArray(node)) return html;
+            if (Array.isArray(node) || level >= groupCols.length) return html;
             
             // Use _sortedKeys array to preserve custom sort order
             const sortedKeys = node._sortedKeys || Object.keys(node);
@@ -797,11 +1159,11 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 const groupPath = parentPath ? parentPath + '>' + key : key;
                 allGroupPaths.push(groupPath);
                 const isCollapsed = collapsedGroups.has(groupPath);
-                const children = groups[key];
-                const flatChildren = flattenTree(children);
-                const hasChildren = !Array.isArray(children);
+                const nodeData = groups[key];
+                const hasChildren = nodeData && nodeData._groups;
                 
-                html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
+                // Correctly apply 'hidden' class if parent is collapsed to preserve state across renders
+                html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + ' ' + (isParentCollapsed ? 'hidden' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
                 
                 groupCols.forEach((col, colIdx) => {
                     if (colIdx < level) {
@@ -818,15 +1180,15 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 });
                 
                 valueCols.forEach(col => {
-                    const sum = flatChildren.reduce((acc, row) => acc + (parseFloat(row[col]) || 0), 0);
-                    const config = pivotSorting[col] || {};
-                    const colorClass = config.format_colors ? (sum < 0 ? 'negative' : (sum > 0 ? 'positive' : '')) : '';
-                    html += '<td class="value-cell ' + colorClass + '">' + formatValue(sum, col) + '</td>';
+                    const aggVal = getAggregationResult(nodeData, col);
+                    const config = formattingDict[col] || {};
+                    const colorClass = config.format_colors ? (aggVal < 0 ? 'negative' : (aggVal > 0 ? 'positive' : '')) : '';
+                    html += '<td class="value-cell ' + colorClass + '" data-col="' + col + '" data-raw="' + (aggVal ?? '') + '">' + formatValue(aggVal, col) + '</td>';
                 });
                 html += '</tr>';
                 
                 if (hasChildren) {
-                    html += renderTree(children, groupCols, valueCols, level + 1, groupPath);
+                    html += renderTree(nodeData, groupCols, valueCols, level + 1, groupPath, isParentCollapsed || isCollapsed);
                 }
             });
             
@@ -867,12 +1229,32 @@ def create_pivot_html(df, output_file='pivot_table.html',
         
         function formatValue(val, colName) {
             if (val === null || val === undefined || isNaN(val)) return '';
-            const fmt = formatting[colName];
+            const config = formattingDict[colName] || {};
+            const fmt = config.fmt || '';
             if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
-            if (fmt === 'percent') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + '%';
+            
+            if (fmt.startsWith('percent')) {
+                let digits = 0;
+                if (fmt === 'percent') digits = 0;
+                else {
+                    const matches = fmt.match(/^percent(\d+)$/);
+                    if (matches) digits = parseInt(matches[1], 10);
+                }
+                // Intl.NumberFormat style: 'percent' MULTIPLIES by 100 automatically.
+                return new Intl.NumberFormat('en-US', { 
+                    style: 'percent', 
+                    minimumFractionDigits: digits, 
+                    maximumFractionDigits: digits 
+                }).format(val);
+            }
+            
             if (fmt === 'number') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
-            if (fmt === 'decimal1') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(val);
-            if (fmt === 'decimal2') return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+            if (fmt.startsWith('decimal')) {
+                let digits = 2;
+                const matches = fmt.match(/^decimal(\d+)$/);
+                if (matches) digits = parseInt(matches[1], 10);
+                return new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(val);
+            }
             return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
         }
         
@@ -881,7 +1263,12 @@ def create_pivot_html(df, output_file='pivot_table.html',
             const selected = Array.from(select.selectedOptions);
             if (selected.length !== 1) { alert('Select one pivot to reorder'); return; }
             const opt = selected[0], prev = opt.previousElementSibling;
-            if (prev) { select.insertBefore(opt, prev); collapsedGroups.clear(); renderPivotTable(); }
+            if (prev) { 
+                select.insertBefore(opt, prev); 
+                collapsedGroups.clear(); 
+                renderPivotTable(); 
+                checkSyncState();
+            }
         }
         
         function movePivotDown() {
@@ -889,7 +1276,13 @@ def create_pivot_html(df, output_file='pivot_table.html',
             const selected = Array.from(select.selectedOptions);
             if (selected.length !== 1) { alert('Select one pivot to reorder'); return; }
             const opt = selected[0], next = opt.nextElementSibling;
-            if (next) { select.insertBefore(next, opt); select.insertBefore(opt, next.nextElementSibling); collapsedGroups.clear(); renderPivotTable(); }
+            if (next) { 
+                select.insertBefore(next, opt); 
+                select.insertBefore(opt, next.nextElementSibling); 
+                collapsedGroups.clear(); 
+                renderPivotTable(); 
+                checkSyncState();
+            }
         }
         
         function showDownloadModal() {
@@ -923,7 +1316,9 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 rows = rows.filter(r => !r.classList.contains('hidden'));
             }
             
-            let result = [groupByCols.concat(valueCols).map(escape).join(separator)];
+            let headerRow = groupByCols.concat(valueCols);
+            if (groupByCols.length === 0) headerRow.unshift('');
+            let result = [headerRow.map(escape).join(separator)];
             
             rows.forEach(row => {
                 const rowType = row.getAttribute('data-type');
@@ -931,9 +1326,13 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 if (rowType === 'grand-total') {
                     if (!options.includeGrandTotal) return;
                     let rowData = [escape('Grand Total')];
-                    for (let i = 1; i < groupByCols.length; i++) rowData.push(escape(''));
+                    const labelCols = Math.max(1, groupByCols.length);
+                    for (let i = 1; i < labelCols; i++) rowData.push(escape(''));
                     const cells = Array.from(row.querySelectorAll('td.value-cell'));
-                    cells.forEach(c => rowData.push(escape(c.textContent.trim())));
+                    cells.forEach(c => {
+                        const raw = c.getAttribute('data-raw');
+                        rowData.push(raw && raw !== '' ? escape(raw) : escape(c.textContent.trim()));
+                    });
                     result.push(rowData.join(separator));
                     return;
                 }
@@ -961,7 +1360,10 @@ def create_pivot_html(df, output_file='pivot_table.html',
                         }
                     }
                     const cells = Array.from(row.querySelectorAll('td.value-cell'));
-                    cells.forEach(c => rowData.push(escape(c.textContent.trim())));
+                    cells.forEach(c => {
+                        const raw = c.getAttribute('data-raw');
+                        rowData.push(raw && raw !== '' ? escape(raw) : escape(c.textContent.trim()));
+                    });
                     result.push(rowData.join(separator));
                 }
             });
@@ -1021,9 +1423,10 @@ def create_pivot_html(df, output_file='pivot_table.html',
         }
         
         function downloadFullData() {
-            const cols = Object.keys(data[0] || {});
+            if (allRecords.length === 0) { alert('No data loaded to download'); return; }
+            const cols = Object.keys(allRecords[0] || {});
             let csv = [cols.map(c => '"' + c + '"').join(',')];
-            data.forEach(row => csv.push(cols.map(c => '"' + (row[c] ?? '').toString().replace(/"/g, '""') + '"').join(',')));
+            allRecords.forEach(row => csv.push(cols.map(c => '"' + (row[c] ?? '').toString().replace(/"/g, '""') + '"').join(',')));
             downloadCSV(csv.join('\\n'), 'full_data_' + new Date().toISOString().split('T')[0] + '.csv');
         }
         
@@ -1047,59 +1450,197 @@ def create_pivot_html(df, output_file='pivot_table.html',
 </html>
 '''
     
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open('pivot_table.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
     
-    print(f"Pivot table saved to {output_file}")
+    print(f"Pivot table template saved to pivot_table.html")
+    print(f"Starting server on http://localhost:{port}")
+    try:
+        app.run(debug=debug, port=port, use_reloader=False)
+    except Exception as e:
+        print(f"ERROR: Could not start server on port {port}: {e}")
+        print(f"TIP: If you are on macOS, port 5000 is often used by AirPlay Receiver.")
+        print(f"Try passing a different port number to create_pivot_html(..., port=5002)")
+
+@app.route('/api/pivot', methods=['POST'])
+def pivot_api():
+    config = request.json
+    pivots = config.get('pivots', [])
+    values = config.get('values', [])
+    formatting_dict = config.get('formatting_dict', {})
+    
+    if GLOBAL_DF is None or not pivots:
+        return jsonify({'tree': {}, 'flat_data': []})
+
+    # Hierarchical aggregation logic
+    def calculate_aggs(group_df, values_list, sorting_config):
+        aggs = {}
+        for col in values_list:
+            conf = sorting_config.get(col, {})
+            agg_op = conf.get('agg', 'sum')
+            null_on_nulls = conf.get('null_on_nulls', False)
+            
+            if group_df.empty:
+                aggs[col] = None
+                continue
+                
+            series_col = conf.get('val_col', col)
+            if series_col not in group_df.columns:
+                aggs[col] = None
+                continue
+                
+            series = pd.to_numeric(group_df[series_col], errors='coerce')
+            
+            if agg_op == 'weighted_avg':
+                weights_col = conf.get('weights_col')
+                if not weights_col or weights_col not in group_df.columns:
+                    aggs[col] = None
+                    continue
+                weights_series = pd.to_numeric(group_df[weights_col], errors='coerce')
+                
+                if null_on_nulls and (series.isnull().any() or weights_series.isnull().any()):
+                    aggs[col] = None
+                    continue
+                
+                mask = series.notnull() & weights_series.notnull()
+                v = series[mask]
+                w = weights_series[mask]
+                
+                if w.empty or w.sum() == 0:
+                    aggs[col] = None
+                else:
+                    aggs[col] = float((v * w).sum() / w.sum())
+                continue
+
+            if null_on_nulls and series.isnull().any():
+                aggs[col] = None
+                continue
+                
+            non_null = series.dropna()
+            if non_null.empty:
+                aggs[col] = None
+                continue
+            
+            if agg_op == 'avg': aggs[col] = float(non_null.mean())
+            elif agg_op == 'min': aggs[col] = float(non_null.min())
+            elif agg_op == 'max': aggs[col] = float(non_null.max())
+            elif agg_op == 'count': aggs[col] = int(len(non_null))
+            elif agg_op == 'median': aggs[col] = float(non_null.median())
+            elif agg_op == 'mode':
+                 modes = non_null.mode()
+                 aggs[col] = float(modes.iloc[0]) if not modes.empty else None
+            elif agg_op == 'std': aggs[col] = float(non_null.std())
+            else: aggs[col] = float(non_null.sum())
+            
+            # Sanitize individual aggregation result
+            aggs[col] = sanitize_for_json(aggs[col])
+        return aggs
+
+    def build_tree_python(df, current_pivots, value_cols, sorting_config, current_level=0):
+        # Calculate aggregations for THIS node (the group itself)
+        node_aggs = calculate_aggs(df, value_cols, sorting_config)
+        
+        if current_level >= len(current_pivots):
+            return {"_agg": node_aggs} # Leaf node just returns its aggregations
+        
+        col = current_pivots[current_level]
+        groups = df.groupby(col, dropna=False)
+        
+        result = {"_groups": {}, "_sortedKeys": [], "_agg": node_aggs}
+        
+        for name, group_df in groups:
+            key = str(name) if pd.notnull(name) else "(blank)"
+            
+            # Sub-tree
+            children = build_tree_python(group_df, current_pivots, value_cols, sorting_config, current_level + 1)
+            result["_groups"][key] = children
+            result["_sortedKeys"].append(key)
+            
+        return result
+
+    filtered_df = GLOBAL_DF.copy()
+    tree = build_tree_python(filtered_df, pivots, values, formatting_dict)
+    
+    return jsonify(sanitize_for_json({
+        'tree': tree,
+        'flat_data': [], # No longer needed for aggregation, saves memory
+        'all_records': filtered_df.to_dict('records') # Full dataset for accurate client-side filtering
+    }))
+
+@app.route('/pivot_table.html')
+def serve_html():
+    template_path = os.path.abspath('pivot_table.html')
+    return send_from_directory(os.path.dirname(template_path), os.path.basename(template_path))
+
+@app.route('/')
+def home():
+    return serve_html()
 
 
 if __name__ == "__main__":
     # Sample data with dates and version numbers to demonstrate custom sorting
+    # Generate 10k rows of sample data with randomized values
+    import numpy as np
+    n_rows = 10000
+    regions = ['East', 'West', 'North', 'South']
+    products = ['Product A', 'Product B', 'Product C', 'Product D']
+    categories = ['Electronics', 'Furniture', 'Apparel', 'Accessories']
+    
+    region_choices = np.random.choice(regions, n_rows)
+    # Bias Margin based on region to show distinct weighted averages
+    # East: ~0.2, West: ~0.5, North: ~0.3, South: ~0.4
+    margin_map = {'East': 0.2, 'West': 0.5, 'North': 0.3, 'South': 0.4}
+    margins = [margin_map[r] + np.random.uniform(-0.05, 0.05) for r in region_choices]
+    
     sample_data = pd.DataFrame({
-        'Region': ['East', 'East', 'West', 'West', 'East', 'West', 'North', 'North', 'South', 'South', 'East', 'West'],
-        'Product': ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'C', 'C'],
-        'Category': ['Electronics', 'Electronics', 'Electronics', 'Furniture', 'Furniture', 'Furniture', 'Electronics', 'Furniture', 'Electronics', 'Furniture', 'Electronics', 'Furniture'],
-        'Date': ['1/15/2025', '12/1/2024', '9/11/2025', '2/28/2025', '11/5/2024', '3/22/2025', '8/8/2025', '4/1/2025', '10/20/2024', '5/15/2025', '6/30/2025', '7/4/2025'],
-        'Version': ['2.5', '10', '1.1', '5', '3.2', '7', '9', '4.5', '12', '2', '8', '6.5'],
-        'Sales': [100000, 150000, 200000, 120000, 180000, 140000, 90000, 110000, 95000, 130000, 160000, 175000],
-        'Quantity': [10, 15, 20, 12, 18, 14, 9, 11, 8, 13, 16, 19],
-        'Profit': [30000, 45000, 60000, 36000, 54000, 42000, 27000, 33000, 28500, 39000, 48000, 52500],
-        'PnL': [25500, 38200, 52000, 28500, 45800, 35000, 22000, 28000, 24000, 32500, 40000, 43500],
-        'Growth': [5.5, 8.2, 12.0, 6.5, 9.8, 7.0, 4.0, 6.0, 3.5, 7.5, 10.5, 11.2],
-        'Margin': [0.255, 0.382, 0.520, 0.285, 0.458, 0.350, 0.220, 0.280, 0.300, 0.325, 0.400, 0.430]
+        'Region': region_choices,
+        'Product': np.random.choice(products, n_rows),
+        'Category': np.random.choice(categories, n_rows),
+        'Date': [(pd.to_datetime('2024-01-01') + pd.to_timedelta(np.random.randint(0, 365), unit='D')).strftime('%-m/%-d/%Y') for _ in range(n_rows)],
+        'Version': [f"{np.random.randint(1, 15)}.{np.random.randint(0, 9)}" for _ in range(n_rows)],
+        'Sales': np.random.randint(1000, 200000, n_rows),
+        'Quantity': np.random.randint(1, 50, n_rows),
+        'Profit': np.random.randint(100, 50000, n_rows),
+        'PnL': np.random.randint(-10000, 40000, n_rows),
+        'Growth': np.random.uniform(0, 0.15, n_rows),
+        'Margin': np.array(margins).round(3)
     })
     
     create_pivot_html(
         sample_data, 
-        output_file='pivot_table.html',
         pivot_cols=['Region', 'Product', 'Category', 'Date', 'Version'],
-        value_cols=['Sales', 'PnL', 'Growth', 'Margin', 'Quantity', 'Profit'],
+        value_cols=['Sales', 'PnL', 'Growth', 'Margin', 'Quantity', 'Profit', 'ModeMargin', 'StdMargin'],
         default_pivots=['Region', 'Date'],
-        default_values=['Sales', 'PnL'],
-        formatting={
-            'Sales': 'currency',
-            'PnL': 'currency',
-            'Growth': 'percent',
-            'Margin': 'decimal2',
-            'Quantity': 'number',
-            'Profit': 'currency'
-        },
-        # Custom sorting for dates and version numbers
-        pivot_sorting={
+        default_values=['Sales', 'PnL', 'Quantity', 'ModeMargin', 'StdMargin'],
+        # Combined formatting, sorting, and aggregation configuration
+        formatting_dict={
             'Date': {
                 'type': 'date',
-                'format': 'M/D/YYYY',  # Format: M/D/YYYY or MM/DD/YYYY
-                'order': 'asc'  # Chronological order
+                'format': 'M/D/YYYY',
+                'order': 'asc'
             },
             'Version': {
                 'type': 'number',
-                'order': 'asc'  # 1.1, 2, 2.5, 3.2, 4.5, 5, 6.5, 7, 8, 9, 10, 12
+                'order': 'asc'
             },
             'Region': {
-                'order': 'desc'  # Descending alphabetical: West, South, North, East
+                'order': 'desc'
             },
-            'Sales': {'format_colors': True},
-            'PnL': {'format_colors': True},
-            'Profit': {'format_colors': True}
+            'Sales': {'format_colors': True, 'fmt': 'currency'},
+            'PnL': {'format_colors': True, 'agg': 'avg', 'fmt': 'currency'},
+            'Profit': {'format_colors': True, 'agg': 'max', 'fmt': 'currency'},
+            'Growth': {'agg': 'min', 'null_on_nulls': True, 'fmt': 'percent2'},
+            'Margin': {'agg': 'count', 'fmt': 'decimal2'},
+            'Quantity': {'fmt': 'number', 'agg': 'median'},
+            'WMargin': {
+                'agg': 'weighted_avg', 
+                'val_col': 'Margin', 
+                'weights_col': 'Quantity',
+                'null_on_nulls': True,
+                'default': True,
+                'fmt': 'decimal4'
+            },
+            'ModeMargin': {'val_col': 'Margin', 'agg': 'mode', 'fmt': 'decimal2'},
+            'StdMargin': {'val_col': 'Margin', 'agg': 'std', 'fmt': 'decimal4'}
         }
     )
