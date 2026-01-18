@@ -10,6 +10,17 @@ CORS(app)
 GLOBAL_DF = None
 PIVOT_CONFIG = {}
 
+def sanitize_for_json(obj):
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, (float, np.float64, np.float32)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+    return obj
+
 def create_pivot_html(df, 
                       pivot_cols=None, 
                       value_cols=None, 
@@ -1467,6 +1478,9 @@ def pivot_api():
                  aggs[col] = float(modes.iloc[0]) if not modes.empty else None
             elif agg_op == 'std': aggs[col] = float(non_null.std())
             else: aggs[col] = float(non_null.sum())
+            
+            # Sanitize individual aggregation result
+            aggs[col] = sanitize_for_json(aggs[col])
         return aggs
 
     def build_tree_python(df, current_pivots, value_cols, sorting_config, current_level=0):
@@ -1494,11 +1508,11 @@ def pivot_api():
     filtered_df = GLOBAL_DF.copy()
     tree = build_tree_python(filtered_df, pivots, values, formatting_dict)
     
-    return jsonify({
+    return jsonify(sanitize_for_json({
         'tree': tree,
         'flat_data': [], # No longer needed for aggregation, saves memory
         'all_records': filtered_df.to_dict('records') # Full dataset for accurate client-side filtering
-    })
+    }))
 
 @app.route('/pivot_table.html')
 def serve_html():
