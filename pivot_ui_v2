@@ -236,7 +236,7 @@ def create_pivot_html(df, output_file='pivot_table.html',
                 <span>📋</span> Copy View to Clipboard
             </button>
             <label class="toolbar-item" title="Toggle group subtotal rows in export">
-                <input type="checkbox" id="includeSubtotals" checked>
+                <input type="checkbox" id="includeSubtotals">
                 Include Group Subtotals
             </label>
             <div class="toolbar-separator"></div>
