@@ -119,15 +119,17 @@ def create_pivot_html(df,
         .download-btn.secondary { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); }
         .controls { padding: 24px 30px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
         .control-group { display: flex; flex-direction: column; gap: 8px; }
-        label { font-weight: 600; font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px; }
+        label { font-weight: 600; font-size: 11px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px; }
         .select-wrapper { display: flex; gap: 12px; align-items: stretch; }
-        select { padding: 10px 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white; font-family: inherit; flex: 1; }
+        select { padding: 8px 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 12px; background: white; font-family: inherit; flex: 1; }
         select:focus { outline: none; border-color: #667eea; }
-        select[multiple] { min-height: 100px; }
+        select[multiple] { min-height: 100px; max-height: 200px; padding: 6px 8px; }
+        select[multiple] option { padding: 4px 6px; margin: 2px 0; border-radius: 3px; font-size: 11px; }
+        select[multiple] option:checked { background: #d3d8dc; color: #333; }
         .order-buttons { display: flex; flex-direction: column; gap: 4px; }
         .order-btn { background: #667eea; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; }
         .order-btn:hover { background: #5568d3; }
-        .help-text { font-size: 12px; color: #6c757d; font-style: italic; }
+        .help-text { font-size: 11px; color: #6c757d; font-style: italic; }
         
         /* Toolbar */
         .toolbar { padding: 12px 30px; background: #fff; border-bottom: 1px solid #e9ecef; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -182,8 +184,9 @@ def create_pivot_html(df,
             transition: all 0.3s ease;
         }
         .table-container.out-of-sync .virtual-scroll-container {
-            filter: blur(5px);
-            opacity: 0.6;
+            filter: blur(6px);
+            opacity: 0.5;
+            pointer-events: none;
         }
         .sync-overlay {
             position: absolute;
@@ -281,7 +284,7 @@ def create_pivot_html(df,
         .add-filter-container { margin-bottom: 6px; }
         .add-filter-btn { background: #fff; border: 1px dashed #667eea; color: #667eea; padding: 4px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
         .add-filter-btn:hover { background: #f5f7ff; border-style: solid; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .filters-helper { font-size: 10px; color: #999; margin-top: 6px; text-align: right; }
+        .filters-helper { font-size: 10px; color: #999; margin-top: 6px; text-align: left; }
         
         .multi-select-dropdown { position: absolute; background: white; border: 1px solid #dee2e6; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 2000; width: 300px; display: flex; flex-direction: column; overflow: hidden; }
         .dropdown-search { padding: 10px; border-bottom: 1px solid #eee; }
@@ -297,6 +300,29 @@ def create_pivot_html(df,
 
         .numeric-filter-pane { padding: 15px; display: flex; flex-direction: column; gap: 12px; }
         .numeric-row { display: flex; flex-direction: column; gap: 5px; }
+        
+        /* Query Builder Styling */
+        .qb-group { display: flex; flex-direction: column; gap: 8px; }
+        .qb-group-header { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; max-width: 40%; }
+        .qb-group-logic { flex: 1 1 50%; padding: 6px 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; background: white; font-family: inherit; cursor: pointer; height: 32px; box-sizing: border-box; min-width: 0; }
+        .qb-group-logic:focus { outline: none; border-color: #667eea; }
+        .qb-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; flex-wrap: wrap; flex-shrink: 0; }
+        .qb-btn { padding: 5px 10px; font-size: 11px; border: 1px dashed #999; border-radius: 3px; cursor: pointer; background: #fff; color: #555; font-family: inherit; font-weight: 500; transition: all 0.2s; }
+        .qb-btn:hover { border-style: solid; background: #f8f9fa; }
+        .qb-btn-delete { border: none; background: none; color: #999; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; transition: color 0.2s; }
+        .qb-btn-delete:hover { color: #d00000; }
+        .qb-rule { display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: white; border: 1px solid #e9ecef; border-radius: 4px; flex-wrap: nowrap; }
+        .qb-rule-select { flex: 1 1 33%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; background: white; font-family: inherit; cursor: pointer; height: 32px; box-sizing: border-box; min-width: 0; }
+        .qb-rule-select:focus { outline: none; border-color: #667eea; }
+        .qb-rule-input { flex: 1 1 33%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; font-family: inherit; height: 32px; box-sizing: border-box; min-width: 0; }
+        .qb-rule-input:focus { outline: none; border-color: #667eea; }
+        .qb-rule-spacer { font-size: 11px; color: #999; white-space: nowrap; flex-shrink: 0; }
+        .qb-children { display: flex; flex-direction: column; gap: 6px; }
+        .qb-group > div:not(.qb-group-header) { padding-left: 12px; border-left: 2px solid #e9ecef; }
+        .qb-group.is-root > div:not(.qb-group-header) { border-left: 3px solid #667eea; padding-left: 10px; }
+        .qb-rule.incomplete { background: #fff8f0; border-color: #ffb347; }
+        .qb-rule.incomplete::after { content: ' ⚠ Incomplete'; color: #ff8c00; font-size: 10px; font-weight: 600; margin-left: 4px; }
+        .qb-container { max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 15px; background: #fff; }
     </style>
 </head>
 <body>
@@ -330,12 +356,13 @@ def create_pivot_html(df,
         </div>
         
         <div class="filters-section">
-            <label class="filters-label">Global Filters</label>
-            <div class="add-filter-container">
-                <button class="add-filter-btn" id="addFilterBtn">+ Add Filter</button>
+            <label class="filters-label">Global Filter Query Builder</label>
+            <div id="queryBuilderContainer" class="qb-container">
+                <!-- Recursive Query Builder Roots Here -->
             </div>
-            <div id="activeFilters" style="display: flex; flex-direction: column; gap: 8px;"></div>
-            <div class="filters-helper">Applied to raw data before aggregation</div>
+            <div class="filters-helper" style="margin-top: 8px;">
+                <span>Build complex logic with Groups and Rules. Filters apply automatically when you Query Data.</span>
+            </div>
         </div>
         
         <div class="toolbar">
@@ -419,7 +446,7 @@ def create_pivot_html(df,
         const collapsedGroups = new Set();
         const pivotFilters = {};
         const numericFilters = {};
-        const globalFilters = {}; // { column: values[] or {operator, value1, value2, pick_list[]} }
+        let globalFilters = {}; // { column: values[] or {operator, value1, value2, pick_list[]} }
 
         async function fetchPivotData() {
             const groupBySelect = document.getElementById('groupBy');
@@ -431,6 +458,9 @@ def create_pivot_html(df,
                 alert('Please select at least one pivot and one value column.');
                 return;
             }
+
+            // Capture current filter tree state
+            globalFilters = JSON.parse(JSON.stringify(queryTree));
 
             showLoading();
             document.getElementById('queryBtn').disabled = true;
@@ -491,6 +521,9 @@ def create_pivot_html(df,
             const currentValues = Array.from(valueColsSelect.selectedOptions).map(opt => opt.value);
 
             const container = document.getElementById('tableContainer');
+            
+            // Update globalFilters from current queryTree state
+            globalFilters = JSON.parse(JSON.stringify(queryTree));
             
             // Logic for blurring (grey out):
             // 1. Pivots: any currently selected pivot was NOT in the last query -> Blur
@@ -694,18 +727,20 @@ def create_pivot_html(df,
             });
         }
         
-        // Handle mousedown to toggle selection in multi-select
         function handleSelectMouseDown(event, selectId) {
             const option = event.target;
             if (option.tagName === 'OPTION') {
-                event.preventDefault();
-                // Toggle the selection
-                option.selected = !option.selected;
-                // Trigger the change handler
+                event.preventDefault(); // Prevent default to enable toggle behavior
+                option.selected = !option.selected; // Toggle selection
+
+                // Trigger change event
+                const select = document.getElementById(selectId);
+                select.dispatchEvent(new Event('change'));
+
                 handleSelectChange(selectId);
             }
         }
-        
+
         function handleSelectChange(selectId) {
             collapsedGroups.clear();
             if (selectId === 'groupBy') {
@@ -758,24 +793,81 @@ def create_pivot_html(df,
                     const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
                     if (!pivotFilters[col].has(val)) return false;
                 }
-                // Numeric Filters
-                for (const col in numericFilters) {
-                    if (col === excludeCol) continue;
-                    const filter = numericFilters[col];
-                    if (filter.operator === 'none') continue;
-                    const rowVal = parseFloat(row[col]) || 0;
-                    const val1 = parseFloat(filter.value1);
-                    const val2 = parseFloat(filter.value2);
-                    switch (filter.operator) {
-                        case 'equals': if (isNaN(val1) || rowVal !== val1) return false; break;
-                        case 'notEquals': if (isNaN(val1) || rowVal === val1) return false; break;
-                        case 'greaterThan': if (isNaN(val1) || rowVal <= val1) return false; break;
-                        case 'lessThan': if (isNaN(val1) || rowVal >= val1) return false; break;
-                        case 'between': if (isNaN(val1) || isNaN(val2) || rowVal < val1 || rowVal > val2) return false; break;
-                    }
+                
+                // Global Filters (Recursive Tree)
+                if (globalFilters && globalFilters.type === 'group') {
+                     if (!checkFilterNode(row, globalFilters)) return false;
                 }
+                
                 return true;
             });
+        }
+
+        function checkFilterNode(row, node) {
+            if (node.type === 'rule') {
+                const col = node.column;
+                if (!col) return true;
+                
+                // Ignore empty filters - if value is empty string, rule is skipped
+                if (node.value === '' || node.value === undefined || node.value === null) return true;
+                
+                let rowVal = row[col];
+                if (rowVal === null || rowVal === undefined) rowVal = '';
+                
+                const op = node.operator;
+                const v1 = node.value;
+                const v2 = node.value2; // for between
+                
+                // Numeric handling
+                const isNumericCol = allNumericCols.includes(col);
+                if (isNumericCol) {
+                    const numVal = parseFloat(rowVal);
+                    const numV1 = parseFloat(v1);
+                    const numV2 = parseFloat(v2);
+                    
+                    if (isNaN(numVal)) return false; 
+                    
+                    if (op === 'equals') return numVal === numV1;
+                    if (op === 'notEquals') return numVal !== numV1;
+                    if (op === 'greaterThan') return numVal > numV1;
+                    if (op === 'greaterThanOrEqual') return numVal >= numV1;
+                    if (op === 'lessThan') return numVal < numV1;
+                    if (op === 'lessThanOrEqual') return numVal <= numV1;
+                    if (op === 'between') return numVal >= numV1 && numVal <= numV2;
+                } else {
+                    // String/Date handling
+                    const strVal = String(rowVal).toLowerCase();
+                    const strV1 = String(v1).toLowerCase();
+                    const strV2 = String(v2).toLowerCase();
+                    
+                    if (op === 'equals') return strVal === strV1;
+                    if (op === 'notEquals') return strVal !== strV1;
+                    // Date/string comparison operators
+                    if (op === 'greaterThan') return strVal > strV1;
+                    if (op === 'greaterThanOrEqual') return strVal >= strV1;
+                    if (op === 'lessThan') return strVal < strV1;
+                    if (op === 'lessThanOrEqual') return strVal <= strV1;
+                    if (op === 'between') return strVal >= strV1 && strVal <= strV2;
+                }
+                return true;
+            }
+            
+            if (node.type === 'group') {
+                 const children = node.children || [];
+                 if (children.length === 0) return true;
+                 
+                 const logic = node.logic; // AND / OR
+                 
+                 if (logic === 'OR') {
+                     // ANY match
+                     return children.some(child => checkFilterNode(row, child));
+                 } else {
+                     // ALL match
+                     return children.every(child => checkFilterNode(row, child));
+                 }
+            }
+            
+            return true;
         }
         
         window.addEventListener('keydown', function(event) {
@@ -1489,268 +1581,327 @@ def create_pivot_html(df,
         });
         
         renderPivotTable();
-        // Global Filters Logic
-        document.getElementById('addFilterBtn').addEventListener('click', (e) => {
+        // QUERY BUILDER IMPLEMENTATION
+        
+        let queryTree = {
+            type: 'group',
+            id: 'root',
+            logic: 'AND',
+            children: [] 
+        };
+        
+        function renderQueryBuilder() {
+            const container = document.getElementById('queryBuilderContainer');
+            container.innerHTML = '';
+            container.appendChild(renderFilterGroup(queryTree, true));
+        }
+
+        function createId() {
+            return 'node_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        function renderFilterGroup(group, isRoot = false) {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'qb-group' + (isRoot ? ' is-root' : '');
+
+            // Header Row
+            const header = document.createElement('div');
+            header.className = 'qb-group-header';
+             
+            // Match Logic Selector
+            const matchLabel = document.createElement('span');
+            matchLabel.textContent = 'Match';
+            matchLabel.style.fontSize = '12px';
+            matchLabel.style.fontWeight = '600';
+            matchLabel.style.flexShrink = '0';
+            
+            const logicSelect = document.createElement('select');
+            logicSelect.className = 'qb-group-logic qb-logic';
+            logicSelect.innerHTML = `
+                <option value="AND" ${group.logic === 'AND' ? 'selected' : ''}>ALL (AND)</option>
+                <option value="OR" ${group.logic === 'OR' ? 'selected' : ''}>ANY (OR)</option>
+            `;
+            
+            const ofLabel = document.createElement('span');
+            ofLabel.textContent = 'of the following:';
+            ofLabel.style.fontSize = '12px';
+            ofLabel.style.fontWeight = '600';
+            ofLabel.style.flexShrink = '0';
+            
+            header.appendChild(matchLabel);
+            header.appendChild(logicSelect);
+            header.appendChild(ofLabel);
+            
+            // Actions
+            const actions = document.createElement('div');
+            actions.className = 'qb-actions';
+            
+            const addRuleBtn = document.createElement('button');
+            addRuleBtn.className = 'qb-btn';
+            addRuleBtn.textContent = '+ Rule';
+            
+            const addGroupBtn = document.createElement('button');
+            addGroupBtn.className = 'qb-btn';
+            addGroupBtn.textContent = '+ Group';
+            
+            actions.appendChild(addRuleBtn);
+            actions.appendChild(addGroupBtn);
+            
+            if (!isRoot) {
+               const delBtn = document.createElement('button');
+               delBtn.className = 'qb-btn-delete';
+               delBtn.textContent = '×';
+               delBtn.title = 'Delete this group';
+               delBtn.onclick = () => deleteNode(group.id);
+               actions.appendChild(delBtn);
+            }
+            
+            header.appendChild(actions);
+            groupDiv.appendChild(header);
+
+            // Children Container
+            const childrenContainer = document.createElement('div');
+            childrenContainer.className = 'qb-children';
+            group.children.forEach(child => {
+                if (child.type === 'group') {
+                    childrenContainer.appendChild(renderFilterGroup(child));
+                } else {
+                    childrenContainer.appendChild(renderFilterRule(child));
+                }
+            });
+            groupDiv.appendChild(childrenContainer);
+
+            // Event Listeners
+            logicSelect.addEventListener('change', (e) => {
+                group.logic = e.target.value;
+                checkSyncState();
+            });
+            
+            addRuleBtn.addEventListener('click', () => {
+                // Default rule
+                group.children.push({ type: 'rule', id: createId(), column: '', operator: 'equals', value: '' });
+                renderQueryBuilder();
+                checkSyncState();
+            });
+            
+            addGroupBtn.addEventListener('click', () => {
+                group.children.push({ type: 'group', id: createId(), logic: 'AND', children: [] });
+                renderQueryBuilder();
+                checkSyncState();
+            });
+            
+            return groupDiv;
+        }
+
+        function renderFilterRule(rule) {
+            const ruleDiv = document.createElement('div');
+            ruleDiv.className = 'qb-rule';
+
             const pivots = Array.from(document.getElementById('groupBy').options).map(o => o.value);
             const allCols = [...new Set([...pivots, ...allNumericCols])];
-            openGlobalFilterDropdown(e.currentTarget, allCols, 'categorical');
-        });
-
-        function openGlobalFilterDropdown(anchor, columns, type) {
-            const existing = document.querySelector('.multi-select-dropdown');
-            if (existing) existing.remove();
-
-            const dropdown = document.createElement('div');
-            dropdown.className = 'multi-select-dropdown';
             
-            // Positioning
-            const rect = anchor.getBoundingClientRect();
-            dropdown.style.top = (rect.bottom + window.scrollY + 5) + 'px';
-            dropdown.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 320) + 'px';
-
-            let html = `
-                <div class="dropdown-search">
-                    <input type="text" placeholder="Search columns..." id="colSearch">
-                </div>
-                <div class="dropdown-list" id="colList">
-                    ${columns.map(col => `<div class="dropdown-item" data-col="${col}">${col}</div>`).join('')}
-                </div>
-            `;
-            dropdown.innerHTML = html;
-            document.body.appendChild(dropdown);
-
-            const input = dropdown.querySelector('#colSearch');
-            input.focus();
-            input.addEventListener('input', (e) => {
-                const term = e.target.value.toLowerCase();
-                dropdown.querySelectorAll('.dropdown-item').forEach(item => {
-                    item.style.display = item.textContent.toLowerCase().includes(term) ? 'flex' : 'none';
-                });
-            });
-
-            dropdown.querySelectorAll('.dropdown-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const col = item.getAttribute('data-col');
-                    dropdown.remove();
-                    setupSpecificFilter(col, anchor);
-                });
-            });
-
-            const closeHandler = (e) => {
-                if (!dropdown.contains(e.target) && e.target !== anchor) {
-                    dropdown.remove();
-                    document.removeEventListener('mousedown', closeHandler);
-                }
-            };
-            document.addEventListener('mousedown', closeHandler);
-        }
-
-        async function setupSpecificFilter(col, anchor) {
-            const isNumeric = allNumericCols.includes(col);
-            const dropdown = document.createElement('div');
-            dropdown.className = 'multi-select-dropdown';
+            // Column Select
+            const colSelect = document.createElement('select');
+            colSelect.className = 'qb-rule-select';
+            colSelect.innerHTML = `<option value="">Select Column...</option>` + 
+                allCols.map(c => `<option value="${c}" ${rule.column === c ? 'selected' : ''}>${c}</option>`).join('');
             
-            const rect = anchor.getBoundingClientRect();
-            dropdown.style.top = (rect.bottom + window.scrollY + 5) + 'px';
-            dropdown.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 320) + 'px';
-
+            // Operator Select
+            const opSelect = document.createElement('select');
+            opSelect.className = 'qb-rule-select';
+            
+            // Value Input
+            let valInput;
+            const isNumeric = rule.column && allNumericCols.includes(rule.column);
+             
             if (isNumeric) {
-                renderNumericFilter(dropdown, col);
+                opSelect.innerHTML = `
+                    <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>=</option>
+                    <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>!=</option>
+                    <option value="greaterThan" ${rule.operator === 'greaterThan' ? 'selected' : ''}>></option>
+                    <option value="greaterThanOrEqual" ${rule.operator === 'greaterThanOrEqual' ? 'selected' : ''}>>= </option>
+                    <option value="lessThan" ${rule.operator === 'lessThan' ? 'selected' : ''}><</option>
+                    <option value="lessThanOrEqual" ${rule.operator === 'lessThanOrEqual' ? 'selected' : ''}><=</option>
+                    <option value="between" ${rule.operator === 'between' ? 'selected' : ''}>Is Between</option>
+                `;
+                valInput = document.createElement('input');
+                valInput.type = 'number';
+                valInput.className = 'qb-rule-input';
+                valInput.value = rule.value || '';
+                valInput.placeholder = 'Value';
             } else {
-                await renderCategoricalFilter(dropdown, col);
+                 // Check if column is a date column
+                 const isDateCol = rule.column && (rule.column.toLowerCase().includes('date') || rule.column.toLowerCase().includes('time'));
+                 
+                 if (isDateCol) {
+                     // Date operators
+                     opSelect.innerHTML = `
+                        <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
+                        <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Not Equals (!=)</option>
+                        <option value="greaterThan" ${rule.operator === 'greaterThan' ? 'selected' : ''}>After (>)</option>
+                        <option value="greaterThanOrEqual" ${rule.operator === 'greaterThanOrEqual' ? 'selected' : ''}>On or After (>=)</option>
+                        <option value="lessThan" ${rule.operator === 'lessThan' ? 'selected' : ''}>Before (<)</option>
+                        <option value="lessThanOrEqual" ${rule.operator === 'lessThanOrEqual' ? 'selected' : ''}>On or Before (<=)</option>
+                        <option value="between" ${rule.operator === 'between' ? 'selected' : ''}>Between Dates</option>
+                     `;
+                     valInput = document.createElement('input');
+                     valInput.type = 'date';
+                 } else {
+                     // String operators
+                     opSelect.innerHTML = `
+                        <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
+                        <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Not Equals (!=)</option>
+                     `;
+                     valInput = document.createElement('input');
+                     valInput.type = 'text';
+                 }
+                 
+                valInput.className = 'qb-rule-input';
+                valInput.value = rule.value || '';
+                valInput.placeholder = isDateCol ? 'YYYY-MM-DD' : 'Value';
+                
+                // Add datalist for non-date string columns
+                if (!isDateCol) {
+                    valInput.setAttribute('list', 'vals-' + rule.id);
+                    // Datalist for Autocomplete
+                    const dataList = document.createElement('datalist');
+                    dataList.id = 'vals-' + rule.id;
+                    ruleDiv.appendChild(dataList);
+                    
+                    // Fetch unique values for datalist
+                    if (rule.column) {
+                        fetchUniqueValues(rule.column, '', dataList);
+                    }
+                }
             }
 
-            document.body.appendChild(dropdown);
-        }
+            ruleDiv.appendChild(colSelect);
+            ruleDiv.appendChild(opSelect);
+            ruleDiv.appendChild(valInput);
 
-        function renderNumericFilter(dropdown, col) {
-            const current = globalFilters[col] || { operator: 'greaterThan', value1: '', value2: '', pick_list: [] };
-            dropdown.innerHTML = `
-                <div class="dropdown-search" style="padding: 15px; font-weight: 600; border-bottom: 2px solid #eee;">Filter ${col}</div>
-                <div class="numeric-filter-pane">
-                    <div class="numeric-row">
-                        <label>Operator</label>
-                        <select id="numOp" style="width: 100%; padding: 6px;">
-                            <option value="equals" ${current.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
-                            <option value="greaterThan" ${current.operator === 'greaterThan' ? 'selected' : ''}>Greater Than (>)</option>
-                            <option value="lessThan" ${current.operator === 'lessThan' ? 'selected' : ''}>Less Than (<)</option>
-                            <option value="between" ${current.operator === 'between' ? 'selected' : ''}>Between</option>
-                        </select>
-                    </div>
-                    <div class="numeric-row">
-                        <label id="val1Label">Value</label>
-                        <input type="number" id="numV1" value="${current.value1}" style="width: 100%; padding: 6px;">
-                    </div>
-                    <div class="numeric-row" id="v2Row" style="display: ${current.operator === 'between' ? 'block' : 'none'};">
-                        <label>And</label>
-                        <input type="number" id="numV2" value="${current.value2}" style="width: 100%; padding: 6px;">
-                    </div>
-                </div>
-                <div class="dropdown-footer">
-                    <button class="dropdown-btn secondary" onclick="this.closest('.multi-select-dropdown').remove()">Cancel</button>
-                    <button class="dropdown-btn primary" id="applyNumFilter">Apply Filter</button>
-                </div>
-            `;
+            // Second value for 'between' (for both numeric and date columns)
+            const isDateCol = rule.column && (rule.column.toLowerCase().includes('date') || rule.column.toLowerCase().includes('time'));
+            if (rule.operator === 'between' && (isNumeric || isDateCol)) {
+                const spacer = document.createElement('span');
+                spacer.className = 'qb-rule-spacer';
+                spacer.textContent = 'and';
+                
+                const val2Input = document.createElement('input');
+                val2Input.type = isDateCol ? 'date' : 'number';
+                val2Input.className = 'qb-rule-input';
+                val2Input.value = rule.value2 || '';
+                val2Input.placeholder = isDateCol ? 'End Date' : 'Max';
+                
+                ruleDiv.appendChild(spacer);
+                ruleDiv.appendChild(val2Input);
+                
+                val2Input.addEventListener('change', (e) => {
+                    rule.value2 = e.target.value;
+                    checkSyncState();
+                    updateIncompleteStatus();  // Update incomplete indicator
+                });
+                
+                // Also listen to 'input' for immediate feedback on date/text inputs
+                val2Input.addEventListener('input', (e) => {
+                    rule.value2 = e.target.value;
+                    checkSyncState();
+                    updateIncompleteStatus();
+                });
+            }
 
-            const opSelect = dropdown.querySelector('#numOp');
-            opSelect.addEventListener('change', () => {
-                dropdown.querySelector('#v2Row').style.display = opSelect.value === 'between' ? 'block' : 'none';
-                dropdown.querySelector('#val1Label').textContent = opSelect.value === 'between' ? 'From' : 'Value';
-            });
+            // Delete Button
+            const delBtn = document.createElement('button');
+            delBtn.className = 'qb-btn-delete';
+            delBtn.textContent = '×';
+            delBtn.title = 'Delete this rule';
+            delBtn.onclick = () => deleteNode(rule.id);
+            ruleDiv.appendChild(delBtn);
+            
+            // Check if rule is incomplete
+            const updateIncompleteStatus = () => {
+                const isBetweenOp = rule.operator === 'between';
+                const needsSecondVal = (isNumeric || isDateCol) && isBetweenOp;
+                const isIncomplete = needsSecondVal && (rule.value === '' || rule.value2 === '');
+                ruleDiv.classList.toggle('incomplete', isIncomplete);
+            };
+            updateIncompleteStatus();
 
-            dropdown.querySelector('#applyNumFilter').addEventListener('click', () => {
-                const op = opSelect.value;
-                const v1 = dropdown.querySelector('#numV1').value;
-                const v2 = dropdown.querySelector('#numV2').value;
-                if (v1 === '') { alert('Please enter a value'); return; }
-                globalFilters[col] = { operator: op, value1: v1, value2: v2 };
-                updateFilterPills();
+            // Handlers
+            colSelect.addEventListener('change', (e) => {
+                rule.column = e.target.value;
+                // Reset operator based on new type
+                const newIsNumeric = allNumericCols.includes(rule.column);
+                rule.operator = newIsNumeric ? 'greaterThan' : 'equals';
+                rule.value = '';
+                renderQueryBuilder();
                 checkSyncState();
-                dropdown.remove();
             });
+            
+            opSelect.addEventListener('change', (e) => {
+                rule.operator = e.target.value;
+                if (rule.operator === 'between') renderQueryBuilder(); // Re-render for 2nd input
+                checkSyncState();
+                updateIncompleteStatus();
+            });
+            
+            valInput.addEventListener('change', (e) => {
+                rule.value = e.target.value;
+                checkSyncState();
+                updateIncompleteStatus();
+            });
+            
+            // Also listen to 'input' for immediate feedback on date/text inputs
+            valInput.addEventListener('input', (e) => {
+                rule.value = e.target.value;
+                checkSyncState();
+                updateIncompleteStatus();
+            });
+
+            return ruleDiv;
         }
 
-        async function renderCategoricalFilter(dropdown, col) {
-            const currentSelected = new Set(globalFilters[col] || []);
-            dropdown.innerHTML = `
-                <div class="dropdown-search">
-                    <div style="font-weight: 600; margin-bottom: 8px;">Filter ${col}</div>
-                    <input type="text" placeholder="Search values..." id="valSearch">
-                </div>
-                <div class="dropdown-list" id="valList" style="min-height: 100px;">
-                    <div style="padding: 20px; text-align: center; color: #666;">Loading values...</div>
-                </div>
-                <div class="dropdown-footer">
-                    <span style="font-size: 11px; color: #666;" id="selCount">${currentSelected.size} selected</span>
-                    <button class="dropdown-btn primary" id="applyCatFilter">Apply</button>
-                </div>
-            `;
-
-            const updateList = async (search = '') => {
-                const list = dropdown.querySelector('#valList');
-                const apiHost = window.location.protocol === 'file:' ? 'http://localhost:' + ''' + str(port) + ''' : '';
+        async function fetchUniqueValues(col, search, dataListElement) {
+            if (!col) return;
+             // Cache logic could go here
+            const apiHost = window.location.protocol === 'file:' ? 'http://localhost:' + ''' + str(port) + ''' : '';
+            try {
                 const resp = await fetch(apiHost + '/api/unique_values', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ column: col, search_term: search })
+                    body: JSON.stringify({ column: col, search_term: '' })
                 });
                 const values = await resp.json();
-                const displayValues = search === '' ? values.slice(0, 10) : values;
-                
-                list.innerHTML = (displayValues.length > 0 ? displayValues : (search === '' ? [] : [])).map(v => `
-                    <div class="dropdown-item ${currentSelected.has(v) ? 'selected' : ''}" data-val="${v}">
-                        <input type="checkbox" ${currentSelected.has(v) ? 'checked' : ''} style="pointer-events: none;">
-                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${v}</span>
-                    </div>
-                `).join('');
-                
-                if (search === '' && values.length > 10) {
-                    const moreMsg = document.createElement('div');
-                    moreMsg.style.padding = '8px 15px';
-                    moreMsg.style.fontSize = '11px';
-                    moreMsg.style.color = '#6c757d';
-                    moreMsg.style.fontStyle = 'italic';
-                    moreMsg.textContent = `Showing top 10 of ${values.length}. Type to search...`;
-                    list.appendChild(moreMsg);
-                } else if (displayValues.length === 0) {
-                    list.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No matches found</div>';
-                }
-
-                list.querySelectorAll('.dropdown-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const val = item.getAttribute('data-val');
-                        if (currentSelected.has(val)) {
-                            currentSelected.delete(val);
-                            item.classList.remove('selected');
-                            item.querySelector('input').checked = false;
-                        } else {
-                            currentSelected.add(val);
-                            item.classList.add('selected');
-                            item.querySelector('input').checked = true;
-                        }
-                        dropdown.querySelector('#selCount').textContent = `${currentSelected.size} selected`;
-                    });
-                });
-            };
-
-            updateList();
-            
-            let debounceTimer;
-            dropdown.querySelector('#valSearch').addEventListener('input', (e) => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => updateList(e.target.value), 300);
-            });
-
-            dropdown.querySelector('#applyCatFilter').addEventListener('click', () => {
-                if (currentSelected.size === 0) {
-                    delete globalFilters[col];
-                } else {
-                    globalFilters[col] = Array.from(currentSelected);
-                }
-                updateFilterPills();
-                checkSyncState();
-                dropdown.remove();
-            });
+                dataListElement.innerHTML = values.map(v => `<option value="${v}">`).join('');
+            } catch(e) { console.error(e); }
         }
 
-        function updateFilterPills() {
-            const container = document.getElementById('activeFilters');
-            container.innerHTML = '';
-            
-            Object.entries(globalFilters).forEach(([col, val]) => {
-                const row = document.createElement('div');
-                row.className = 'filter-row';
-                
-                const colBaseColor = getColorForColumn(col);
-                const pillBg = colBaseColor.replace(')', ', 0.1)').replace('rgb', 'rgba');
-                const pillBorder = colBaseColor.replace(')', ', 0.3)').replace('rgb', 'rgba');
-                const pillText = colBaseColor;
-
-                row.style.borderLeft = `4px solid ${colBaseColor}`;
-                
-                let labelHtml = `<div class="filter-col-label" style="color: ${colBaseColor}">${col}</div>`;
-                let pillsHtml = `<div class="filter-pill-container">`;
-                
-                if (Array.isArray(val)) {
-                    val.forEach(v => {
-                        pillsHtml += `
-                            <div class="filter-pill" style="background: ${pillBg}; border-color: ${pillBorder}; color: ${pillText}">
-                                <span>${v}</span>
-                                <span class="remove" onclick="removeGlobalFilterValue('${col}', '${v.replace(/'/g, "\\'")}')">×</span>
-                            </div>
-                        `;
-                    });
-                } else {
-                    const opDisplay = { equals: '=', greaterThan: '>', lessThan: '<', between: 'range' };
-                    const filterText = `${opDisplay[val.operator]} ${val.value1}${val.operator === 'between' ? '-' + val.value2 : ''}`;
-                    pillsHtml += `
-                        <div class="filter-pill" style="background: ${pillBg}; border-color: ${pillBorder}; color: ${pillText}">
-                            <span>${filterText}</span>
-                            <span class="remove" onclick="removeGlobalFilter('${col}')">×</span>
-                        </div>
-                    `;
-                }
-                
-                pillsHtml += `</div>`;
-                row.innerHTML = labelHtml + pillsHtml;
-                container.appendChild(row);
-            });
+        function deleteNode(id, parent = queryTree) {
+             const idx = parent.children.findIndex(child => child.id === id);
+             if (idx !== -1) {
+                 parent.children.splice(idx, 1);
+                 renderQueryBuilder();
+                 checkSyncState();
+                 return;
+             }
+             parent.children.forEach(child => {
+                 if (child.type === 'group') deleteNode(id, child);
+             });
         }
 
-        function removeGlobalFilterValue(col, val) {
-            if (Array.isArray(globalFilters[col])) {
-                globalFilters[col] = globalFilters[col].filter(v => v !== val);
-                if (globalFilters[col].length === 0) delete globalFilters[col];
-            }
-            updateFilterPills();
-            checkSyncState();
-        }
+        // Initialize QB
+        renderQueryBuilder();
+        
+        // Debug: Log filter state
+        window.debugFilters = function() {
+            console.log('Current Query Tree:', JSON.stringify(queryTree, null, 2));
+            console.log('Global Filters (as sent to server):', JSON.stringify(globalFilters, null, 2));
+        };
+        window.testFilter = function() {
+            debugFilters();
+            console.log('Calling fetchPivotData()...');
+            fetchPivotData();
+        };
 
-        function removeGlobalFilter(col) {
-            delete globalFilters[col];
-            updateFilterPills();
-            checkSyncState();
-        }
 
         function getColorForColumn(col) {
             let hash = 0;
@@ -1778,9 +1929,6 @@ def create_pivot_html(df,
             }
             return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
         }
-
-        // Initialize Global Filters on load
-        updateFilterPills();
     </script>
 </body>
 </html>
@@ -1821,6 +1969,14 @@ def pivot_api():
     values = config.get('values', [])
     formatting_dict = config.get('formatting_dict', {})
     global_filters = config.get('global_filters', {})
+    
+    # Debug logging
+    import sys
+    print(f"\n[DEBUG] pivot_api called:", file=sys.stderr)
+    print(f"  Pivots: {pivots}", file=sys.stderr)
+    print(f"  Values: {values}", file=sys.stderr)
+    print(f"  Global Filters: {json.dumps(global_filters)}", file=sys.stderr)
+    print(f"  DataFrame shape: {GLOBAL_DF.shape if GLOBAL_DF is not None else 'None'}", file=sys.stderr)
     
     if GLOBAL_DF is None or not pivots:
         return jsonify({'tree': {}, 'flat_data': []})
@@ -1912,18 +2068,176 @@ def pivot_api():
         return result
 
     df = GLOBAL_DF.copy()
-    for col, v in global_filters.items():
-        if col not in df.columns: continue
-        if isinstance(v, list): df = df[df[col].astype(str).fillna('(blank)').isin(v)]
-        elif isinstance(v, dict):
-            op, v1, v2, pick = v.get('operator'), v.get('value1'), v.get('value2'), v.get('pick_list')
-            if pick: df = df[df[col].astype(str).fillna('(blank)').isin(pick)]
-            try:
-                if op == 'equals' and v1 != '': df = df[df[col] == float(v1)]
-                elif op == 'greaterThan' and v1 != '': df = df[df[col] > float(v1)]
-                elif op == 'lessThan' and v1 != '': df = df[df[col] < float(v1)]
-                elif op == 'between' and v1 != '' and v2 != '': df = df[(df[col] >= float(v1)) & (df[col] <= float(v2))]
-            except: pass
+    
+    def normalize_date_string(date_str):
+        """Convert various date formats to YYYY-MM-DD for comparison"""
+        if not date_str or date_str == '' or date_str == '(blank)':
+            return None
+        
+        import re
+        date_str = str(date_str).strip()
+        
+        # Try common patterns: M/D/YYYY, MM/DD/YYYY, YYYY-MM-DD, MM-DD-YYYY
+        patterns = [
+            (r'^(\d{1,2})/(\d{1,2})/(\d{4})$', lambda m: f"{m.group(3)}-{m.group(1):0>2}-{m.group(2):0>2}"),  # M/D/YYYY or MM/DD/YYYY
+            (r'^(\d{4})-(\d{1,2})-(\d{1,2})$', lambda m: f"{m.group(1)}-{m.group(2):0>2}-{m.group(3):0>2}"),    # YYYY-MM-DD
+            (r'^(\d{1,2})-(\d{1,2})-(\d{4})$', lambda m: f"{m.group(3)}-{m.group(1):0>2}-{m.group(2):0>2}"),    # M-D-YYYY
+            (r'^(\d{1,2})\.(\d{1,2})\.(\d{4})$', lambda m: f"{m.group(3)}-{m.group(1):0>2}-{m.group(2):0>2}"),   # M.D.YYYY
+        ]
+        
+        for pattern, converter in patterns:
+            match = re.match(pattern, date_str)
+            if match:
+                try:
+                    return converter(match)
+                except:
+                    pass
+        
+        return None
+    
+    def apply_filter_condition(df, col, op, v1, v2):
+        try:
+            # Detect if column likely contains dates (by name or by checking values)
+            col_lower = col.lower()
+            is_date_col = 'date' in col_lower or 'time' in col_lower
+            
+            # Handle numeric conversion safely
+            if (df[col].dtype.kind in 'bcifu'): # types: bool, complex, signed int, float, unsigned int
+                val1 = float(v1) if v1 != '' else 0
+                val2 = float(v2) if v2 != '' else 0
+                
+                if op == 'equals': return df[col] == val1
+                elif op == 'notEquals': return df[col] != val1
+                elif op == 'greaterThan': return df[col] > val1
+                elif op == 'greaterThanOrEqual': return df[col] >= val1
+                elif op == 'lessThan': return df[col] < val1
+                elif op == 'lessThanOrEqual': return df[col] <= val1
+                elif op == 'between': return (df[col] >= val1) & (df[col] <= val2)
+            else:
+                # String/Date handling
+                if is_date_col:
+                    # Try to normalize dates for comparison
+                    normalized_v1 = normalize_date_string(v1)
+                    normalized_v2 = normalize_date_string(v2)
+                    
+                    if normalized_v1:
+                        # Convert column to normalized dates too
+                        normalized_col = df[col].apply(normalize_date_string)
+                        
+                        if op == 'equals': return normalized_col == normalized_v1
+                        elif op == 'notEquals': return normalized_col != normalized_v1
+                        elif op == 'greaterThan': return normalized_col > normalized_v1
+                        elif op == 'greaterThanOrEqual': return normalized_col >= normalized_v1
+                        elif op == 'lessThan': return normalized_col < normalized_v1
+                        elif op == 'lessThanOrEqual': return normalized_col <= normalized_v1
+                        elif op == 'between' and normalized_v2:
+                            return (normalized_col >= normalized_v1) & (normalized_col <= normalized_v2)
+                
+                # Fall back to string comparison
+                val1_str = str(v1).lower() if v1 else ''
+                val2_str = str(v2).lower() if v2 else ''
+                series_str = df[col].astype(str).str.lower().fillna('')
+                
+                if op == 'equals': return series_str == val1_str
+                elif op == 'notEquals': return series_str != val1_str
+                elif op == 'greaterThan': return series_str > val1_str
+                elif op == 'greaterThanOrEqual': return series_str >= val1_str
+                elif op == 'lessThan': return series_str < val1_str
+                elif op == 'lessThanOrEqual': return series_str <= val2_str
+                elif op == 'between': return (series_str >= val1_str) & (series_str <= val2_str)
+                 
+        except Exception as e:
+             print(f"[DEBUG] Filter error on col={col}, op={op}, v1={v1}, v2={v2}: {e}")
+             return pd.Series(False, index=df.index)
+        return pd.Series(True, index=df.index)
+
+    def apply_filter_node(df, node):
+        node_type = node.get('type')
+        
+        # Base Case: Rule
+        if node_type == 'rule':
+            col = node.get('column')
+            if not col or col not in df.columns: return pd.Series(True, index=df.index)
+            
+            # Skip empty filters - if value is empty, treat as no filter on this rule
+            v1 = node.get('value')
+            if v1 == '' or v1 is None:
+                return pd.Series(True, index=df.index)
+            
+            # For 'between' operator, require both values
+            op = node.get('operator')
+            if op == 'between':
+                v2 = node.get('value2')
+                if v2 == '' or v2 is None:
+                    # Skip between filter if max value is missing
+                    print(f"[DEBUG] Skipping 'between' filter on {col}: min={v1}, max={v2}", file=sys.stderr)
+                    return pd.Series(True, index=df.index)
+            
+            return apply_filter_condition(df, col, op, v1, node.get('value2'))
+        
+        # Recursive Case: Group
+        if node_type == 'group':
+            children = node.get('children', [])
+            if not children: return pd.Series(True, index=df.index)
+            
+            logic = node.get('logic', 'AND')
+            group_mask = None
+            
+            for child in children:
+                child_mask = apply_filter_node(df, child)
+                if group_mask is None:
+                    group_mask = child_mask
+                elif logic == 'OR':
+                    group_mask = group_mask | child_mask
+                else: # AND
+                    group_mask = group_mask & child_mask
+            
+            return group_mask if group_mask is not None else pd.Series(True, index=df.index)
+            
+        return pd.Series(True, index=df.index)
+
+    # Detect if global_filters is a Tree (Root Group) or Legacy Map
+    # Tree typically has 'type': 'group' and 'children' at top level
+    is_tree = isinstance(global_filters, dict) and global_filters.get('type') == 'group'
+    
+    if is_tree:
+        # Apply recursive tree Logic
+        mask = apply_filter_node(df, global_filters)
+        if mask is not None: 
+            rows_before = len(df)
+            df = df[mask]
+            rows_after = len(df)
+            print(f"[DEBUG] Filter applied: {rows_before} -> {rows_after} rows", file=sys.stderr)
+        
+    else:
+        # LEGACY / FLAT MAP SUPPORT (Backwards Compatibility)
+        for col, v in global_filters.items():
+            if col not in df.columns: continue
+            if isinstance(v, list): df = df[df[col].astype(str).fillna('(blank)').isin(v)]
+            elif isinstance(v, dict):
+                # Handle complex filter (per-column AND/OR)
+                if v.get('type') == 'complex':
+                    logic = v.get('logic', 'AND')
+                    conditions = v.get('conditions', [])
+                    if not conditions: continue
+                    
+                    # Combine conditions
+                    mask = None
+                    for cond in conditions:
+                        op, v1, v2 = cond.get('operator'), cond.get('value1'), cond.get('value2')
+                        cond_mask = apply_filter_condition(df, col, op, v1, v2)
+                        
+                        if mask is None: mask = cond_mask
+                        elif logic == 'OR': mask = mask | cond_mask
+                        else: mask = mask & cond_mask
+                    
+                    if mask is not None: df = df[mask]
+                
+                # Legacy/Simple fallthrough
+                else:
+                    op, v1, v2 = v.get('operator'), v.get('value1'), v.get('value2')
+                    mask = apply_filter_condition(df, col, op, v1, v2)
+                    df = df[mask]
     filtered_df = df
     tree = build_tree_python(filtered_df, pivots, values, formatting_dict)
     
