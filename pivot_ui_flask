@@ -268,6 +268,35 @@ def create_pivot_html(df,
         /* Toast Notification */
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; z-index: 20000; display: none; opacity: 0; transition: opacity 0.3s; }
         .toast.show { display: block; opacity: 1; }
+        /* Global Filters */
+        .filters-section { padding: 4px 30px 15px 30px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; }
+        .filters-label { margin-top: 10px !important; margin-bottom: 4px !important; display: block; font-weight: 700; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .filter-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; padding: 4px 12px; border-radius: 6px; background: #fff; border: 1px solid #e9ecef; min-height: 32px; }
+        .filter-col-label { min-width: 90px; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; }
+        .filter-pill-container { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; padding: 2px 0; }
+        .filter-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; border: 1px solid transparent; transition: all 0.2s; }
+        .filter-pill .remove { cursor: pointer; font-size: 14px; line-height: 1; opacity: 0.6; }
+        .filter-pill .remove:hover { opacity: 1; }
+        
+        .add-filter-container { margin-bottom: 6px; }
+        .add-filter-btn { background: #fff; border: 1px dashed #667eea; color: #667eea; padding: 4px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+        .add-filter-btn:hover { background: #f5f7ff; border-style: solid; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .filters-helper { font-size: 10px; color: #999; margin-top: 6px; text-align: right; }
+        
+        .multi-select-dropdown { position: absolute; background: white; border: 1px solid #dee2e6; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 2000; width: 300px; display: flex; flex-direction: column; overflow: hidden; }
+        .dropdown-search { padding: 10px; border-bottom: 1px solid #eee; }
+        .dropdown-search input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        .dropdown-list { max-height: 250px; overflow-y: auto; padding: 5px 0; }
+        .dropdown-item { padding: 8px 15px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; transition: background 0.1s; }
+        .dropdown-item:hover { background: #f8f9fa; }
+        .dropdown-item.selected { background: #eef2ff; color: #4338ca; font-weight: 500; }
+        .dropdown-footer { padding: 8px 15px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fcfcfc; }
+        .dropdown-btn { padding: 5px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600; }
+        .dropdown-btn.primary { background: #667eea; color: white; border: none; }
+        .dropdown-btn.secondary { background: white; color: #666; border: 1px solid #ddd; }
+
+        .numeric-filter-pane { padding: 15px; display: flex; flex-direction: column; gap: 12px; }
+        .numeric-row { display: flex; flex-direction: column; gap: 5px; }
     </style>
 </head>
 <body>
@@ -298,6 +327,15 @@ def create_pivot_html(df,
                 </select>
                 <div class="help-text">Click to toggle selection</div>
             </div>
+        </div>
+        
+        <div class="filters-section">
+            <label class="filters-label">Global Filters</label>
+            <div class="add-filter-container">
+                <button class="add-filter-btn" id="addFilterBtn">+ Add Filter</button>
+            </div>
+            <div id="activeFilters" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            <div class="filters-helper">Applied to raw data before aggregation</div>
         </div>
         
         <div class="toolbar">
@@ -374,12 +412,14 @@ def create_pivot_html(df,
         let allGroupPaths = [];
         let lastQueriedPivots = [];
         let lastQueriedValues = [];
+        let lastQueriedGlobalFilters = {};
         let isSyncing = false;
         const formattingDict = ''' + formatting_dict_json + ''';
         const allNumericCols = ''' + numeric_cols_json + ''';
         const collapsedGroups = new Set();
         const pivotFilters = {};
         const numericFilters = {};
+        const globalFilters = {}; // { column: values[] or {operator, value1, value2, pick_list[]} }
 
         async function fetchPivotData() {
             const groupBySelect = document.getElementById('groupBy');
@@ -401,7 +441,7 @@ def create_pivot_html(df,
                 const response = await fetch(apiHost + '/api/pivot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pivots, values, formatting_dict: formattingDict })
+                    body: JSON.stringify({ pivots, values, formatting_dict: formattingDict, global_filters: globalFilters })
                 });
                 
                 if (!response.ok) throw new Error('API request failed');
@@ -419,6 +459,7 @@ def create_pivot_html(df,
                 
                 lastQueriedPivots = [...pivots];
                 lastQueriedValues = [...values];
+                lastQueriedGlobalFilters = JSON.parse(JSON.stringify(globalFilters));
                 checkSyncState();
                 
                 collapsedGroups.clear();
@@ -459,7 +500,10 @@ def create_pivot_html(df,
             const pivotsSubset = currentPivots.every(p => lastQueriedPivots.includes(p));
             const valuesSubset = currentValues.every(v => lastQueriedValues.includes(v));
             
-            const isOutOfSync = !pivotsSubset || !valuesSubset;
+            // Check if global filters have changed
+            const filtersSync = JSON.stringify(globalFilters) === JSON.stringify(lastQueriedGlobalFilters);
+            
+            const isOutOfSync = !pivotsSubset || !valuesSubset || !filtersSync;
             
             if (isOutOfSync) {
                 container.classList.add('out-of-sync');
@@ -1445,6 +1489,298 @@ def create_pivot_html(df,
         });
         
         renderPivotTable();
+        // Global Filters Logic
+        document.getElementById('addFilterBtn').addEventListener('click', (e) => {
+            const pivots = Array.from(document.getElementById('groupBy').options).map(o => o.value);
+            const allCols = [...new Set([...pivots, ...allNumericCols])];
+            openGlobalFilterDropdown(e.currentTarget, allCols, 'categorical');
+        });
+
+        function openGlobalFilterDropdown(anchor, columns, type) {
+            const existing = document.querySelector('.multi-select-dropdown');
+            if (existing) existing.remove();
+
+            const dropdown = document.createElement('div');
+            dropdown.className = 'multi-select-dropdown';
+            
+            // Positioning
+            const rect = anchor.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+            dropdown.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 320) + 'px';
+
+            let html = `
+                <div class="dropdown-search">
+                    <input type="text" placeholder="Search columns..." id="colSearch">
+                </div>
+                <div class="dropdown-list" id="colList">
+                    ${columns.map(col => `<div class="dropdown-item" data-col="${col}">${col}</div>`).join('')}
+                </div>
+            `;
+            dropdown.innerHTML = html;
+            document.body.appendChild(dropdown);
+
+            const input = dropdown.querySelector('#colSearch');
+            input.focus();
+            input.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+                    item.style.display = item.textContent.toLowerCase().includes(term) ? 'flex' : 'none';
+                });
+            });
+
+            dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const col = item.getAttribute('data-col');
+                    dropdown.remove();
+                    setupSpecificFilter(col, anchor);
+                });
+            });
+
+            const closeHandler = (e) => {
+                if (!dropdown.contains(e.target) && e.target !== anchor) {
+                    dropdown.remove();
+                    document.removeEventListener('mousedown', closeHandler);
+                }
+            };
+            document.addEventListener('mousedown', closeHandler);
+        }
+
+        async function setupSpecificFilter(col, anchor) {
+            const isNumeric = allNumericCols.includes(col);
+            const dropdown = document.createElement('div');
+            dropdown.className = 'multi-select-dropdown';
+            
+            const rect = anchor.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+            dropdown.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 320) + 'px';
+
+            if (isNumeric) {
+                renderNumericFilter(dropdown, col);
+            } else {
+                await renderCategoricalFilter(dropdown, col);
+            }
+
+            document.body.appendChild(dropdown);
+        }
+
+        function renderNumericFilter(dropdown, col) {
+            const current = globalFilters[col] || { operator: 'greaterThan', value1: '', value2: '', pick_list: [] };
+            dropdown.innerHTML = `
+                <div class="dropdown-search" style="padding: 15px; font-weight: 600; border-bottom: 2px solid #eee;">Filter ${col}</div>
+                <div class="numeric-filter-pane">
+                    <div class="numeric-row">
+                        <label>Operator</label>
+                        <select id="numOp" style="width: 100%; padding: 6px;">
+                            <option value="equals" ${current.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
+                            <option value="greaterThan" ${current.operator === 'greaterThan' ? 'selected' : ''}>Greater Than (>)</option>
+                            <option value="lessThan" ${current.operator === 'lessThan' ? 'selected' : ''}>Less Than (<)</option>
+                            <option value="between" ${current.operator === 'between' ? 'selected' : ''}>Between</option>
+                        </select>
+                    </div>
+                    <div class="numeric-row">
+                        <label id="val1Label">Value</label>
+                        <input type="number" id="numV1" value="${current.value1}" style="width: 100%; padding: 6px;">
+                    </div>
+                    <div class="numeric-row" id="v2Row" style="display: ${current.operator === 'between' ? 'block' : 'none'};">
+                        <label>And</label>
+                        <input type="number" id="numV2" value="${current.value2}" style="width: 100%; padding: 6px;">
+                    </div>
+                </div>
+                <div class="dropdown-footer">
+                    <button class="dropdown-btn secondary" onclick="this.closest('.multi-select-dropdown').remove()">Cancel</button>
+                    <button class="dropdown-btn primary" id="applyNumFilter">Apply Filter</button>
+                </div>
+            `;
+
+            const opSelect = dropdown.querySelector('#numOp');
+            opSelect.addEventListener('change', () => {
+                dropdown.querySelector('#v2Row').style.display = opSelect.value === 'between' ? 'block' : 'none';
+                dropdown.querySelector('#val1Label').textContent = opSelect.value === 'between' ? 'From' : 'Value';
+            });
+
+            dropdown.querySelector('#applyNumFilter').addEventListener('click', () => {
+                const op = opSelect.value;
+                const v1 = dropdown.querySelector('#numV1').value;
+                const v2 = dropdown.querySelector('#numV2').value;
+                if (v1 === '') { alert('Please enter a value'); return; }
+                globalFilters[col] = { operator: op, value1: v1, value2: v2 };
+                updateFilterPills();
+                checkSyncState();
+                dropdown.remove();
+            });
+        }
+
+        async function renderCategoricalFilter(dropdown, col) {
+            const currentSelected = new Set(globalFilters[col] || []);
+            dropdown.innerHTML = `
+                <div class="dropdown-search">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Filter ${col}</div>
+                    <input type="text" placeholder="Search values..." id="valSearch">
+                </div>
+                <div class="dropdown-list" id="valList" style="min-height: 100px;">
+                    <div style="padding: 20px; text-align: center; color: #666;">Loading values...</div>
+                </div>
+                <div class="dropdown-footer">
+                    <span style="font-size: 11px; color: #666;" id="selCount">${currentSelected.size} selected</span>
+                    <button class="dropdown-btn primary" id="applyCatFilter">Apply</button>
+                </div>
+            `;
+
+            const updateList = async (search = '') => {
+                const list = dropdown.querySelector('#valList');
+                const apiHost = window.location.protocol === 'file:' ? 'http://localhost:' + ''' + str(port) + ''' : '';
+                const resp = await fetch(apiHost + '/api/unique_values', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ column: col, search_term: search })
+                });
+                const values = await resp.json();
+                const displayValues = search === '' ? values.slice(0, 10) : values;
+                
+                list.innerHTML = (displayValues.length > 0 ? displayValues : (search === '' ? [] : [])).map(v => `
+                    <div class="dropdown-item ${currentSelected.has(v) ? 'selected' : ''}" data-val="${v}">
+                        <input type="checkbox" ${currentSelected.has(v) ? 'checked' : ''} style="pointer-events: none;">
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${v}</span>
+                    </div>
+                `).join('');
+                
+                if (search === '' && values.length > 10) {
+                    const moreMsg = document.createElement('div');
+                    moreMsg.style.padding = '8px 15px';
+                    moreMsg.style.fontSize = '11px';
+                    moreMsg.style.color = '#6c757d';
+                    moreMsg.style.fontStyle = 'italic';
+                    moreMsg.textContent = `Showing top 10 of ${values.length}. Type to search...`;
+                    list.appendChild(moreMsg);
+                } else if (displayValues.length === 0) {
+                    list.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No matches found</div>';
+                }
+
+                list.querySelectorAll('.dropdown-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const val = item.getAttribute('data-val');
+                        if (currentSelected.has(val)) {
+                            currentSelected.delete(val);
+                            item.classList.remove('selected');
+                            item.querySelector('input').checked = false;
+                        } else {
+                            currentSelected.add(val);
+                            item.classList.add('selected');
+                            item.querySelector('input').checked = true;
+                        }
+                        dropdown.querySelector('#selCount').textContent = `${currentSelected.size} selected`;
+                    });
+                });
+            };
+
+            updateList();
+            
+            let debounceTimer;
+            dropdown.querySelector('#valSearch').addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => updateList(e.target.value), 300);
+            });
+
+            dropdown.querySelector('#applyCatFilter').addEventListener('click', () => {
+                if (currentSelected.size === 0) {
+                    delete globalFilters[col];
+                } else {
+                    globalFilters[col] = Array.from(currentSelected);
+                }
+                updateFilterPills();
+                checkSyncState();
+                dropdown.remove();
+            });
+        }
+
+        function updateFilterPills() {
+            const container = document.getElementById('activeFilters');
+            container.innerHTML = '';
+            
+            Object.entries(globalFilters).forEach(([col, val]) => {
+                const row = document.createElement('div');
+                row.className = 'filter-row';
+                
+                const colBaseColor = getColorForColumn(col);
+                const pillBg = colBaseColor.replace(')', ', 0.1)').replace('rgb', 'rgba');
+                const pillBorder = colBaseColor.replace(')', ', 0.3)').replace('rgb', 'rgba');
+                const pillText = colBaseColor;
+
+                row.style.borderLeft = `4px solid ${colBaseColor}`;
+                
+                let labelHtml = `<div class="filter-col-label" style="color: ${colBaseColor}">${col}</div>`;
+                let pillsHtml = `<div class="filter-pill-container">`;
+                
+                if (Array.isArray(val)) {
+                    val.forEach(v => {
+                        pillsHtml += `
+                            <div class="filter-pill" style="background: ${pillBg}; border-color: ${pillBorder}; color: ${pillText}">
+                                <span>${v}</span>
+                                <span class="remove" onclick="removeGlobalFilterValue('${col}', '${v.replace(/'/g, "\\'")}')">×</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    const opDisplay = { equals: '=', greaterThan: '>', lessThan: '<', between: 'range' };
+                    const filterText = `${opDisplay[val.operator]} ${val.value1}${val.operator === 'between' ? '-' + val.value2 : ''}`;
+                    pillsHtml += `
+                        <div class="filter-pill" style="background: ${pillBg}; border-color: ${pillBorder}; color: ${pillText}">
+                            <span>${filterText}</span>
+                            <span class="remove" onclick="removeGlobalFilter('${col}')">×</span>
+                        </div>
+                    `;
+                }
+                
+                pillsHtml += `</div>`;
+                row.innerHTML = labelHtml + pillsHtml;
+                container.appendChild(row);
+            });
+        }
+
+        function removeGlobalFilterValue(col, val) {
+            if (Array.isArray(globalFilters[col])) {
+                globalFilters[col] = globalFilters[col].filter(v => v !== val);
+                if (globalFilters[col].length === 0) delete globalFilters[col];
+            }
+            updateFilterPills();
+            checkSyncState();
+        }
+
+        function removeGlobalFilter(col) {
+            delete globalFilters[col];
+            updateFilterPills();
+            checkSyncState();
+        }
+
+        function getColorForColumn(col) {
+            let hash = 0;
+            for (let i = 0; i < col.length; i++) {
+                hash = col.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const h = Math.abs(hash % 360);
+            return `rgb(${hsvToRgb(h / 360, 0.7, 0.6).join(',')})`;
+        }
+
+        function hsvToRgb(h, s, v) {
+            let r, g, b;
+            let i = Math.floor(h * 6);
+            let f = h * 6 - i;
+            let p = v * (1 - s);
+            let q = v * (1 - f * s);
+            let t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+        }
+
+        // Initialize Global Filters on load
+        updateFilterPills();
     </script>
 </body>
 </html>
@@ -1462,12 +1798,29 @@ def create_pivot_html(df,
         print(f"TIP: If you are on macOS, port 5000 is often used by AirPlay Receiver.")
         print(f"Try passing a different port number to create_pivot_html(..., port=5002)")
 
+@app.route('/api/unique_values', methods=['POST'])
+def unique_values():
+    config = request.json
+    col = config.get('column')
+    search = config.get('search_term', '').lower()
+    if GLOBAL_DF is None or col not in GLOBAL_DF.columns: return jsonify([])
+    
+    vals = GLOBAL_DF[col].astype(str).fillna('(blank)').unique().tolist()
+    if search: vals = [v for v in vals if search in v.lower()]
+    
+    try:
+        vals = sorted(vals, key=lambda x: float(x) if x != '(blank)' else -float('inf'))
+    except:
+        vals = sorted(vals)
+    return jsonify(vals[:1000])
+
 @app.route('/api/pivot', methods=['POST'])
 def pivot_api():
     config = request.json
     pivots = config.get('pivots', [])
     values = config.get('values', [])
     formatting_dict = config.get('formatting_dict', {})
+    global_filters = config.get('global_filters', {})
     
     if GLOBAL_DF is None or not pivots:
         return jsonify({'tree': {}, 'flat_data': []})
@@ -1558,7 +1911,20 @@ def pivot_api():
             
         return result
 
-    filtered_df = GLOBAL_DF.copy()
+    df = GLOBAL_DF.copy()
+    for col, v in global_filters.items():
+        if col not in df.columns: continue
+        if isinstance(v, list): df = df[df[col].astype(str).fillna('(blank)').isin(v)]
+        elif isinstance(v, dict):
+            op, v1, v2, pick = v.get('operator'), v.get('value1'), v.get('value2'), v.get('pick_list')
+            if pick: df = df[df[col].astype(str).fillna('(blank)').isin(pick)]
+            try:
+                if op == 'equals' and v1 != '': df = df[df[col] == float(v1)]
+                elif op == 'greaterThan' and v1 != '': df = df[df[col] > float(v1)]
+                elif op == 'lessThan' and v1 != '': df = df[df[col] < float(v1)]
+                elif op == 'between' and v1 != '' and v2 != '': df = df[(df[col] >= float(v1)) & (df[col] <= float(v2))]
+            except: pass
+    filtered_df = df
     tree = build_tree_python(filtered_df, pivots, values, formatting_dict)
     
     return jsonify(sanitize_for_json({
