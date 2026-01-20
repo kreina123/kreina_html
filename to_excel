@@ -27,7 +27,8 @@ def create_pivot_html(df,
                       default_pivots=None, 
                       default_values=None,
                       formatting_dict=None,
-                      port=5002,
+                      initial_filters=None,
+                      port=5001,
                       debug=False):
     """
     Create an interactive HTML pivot table that fetches data from a Flask API.
@@ -39,7 +40,8 @@ def create_pivot_html(df,
         'value_cols': value_cols,
         'default_pivots': default_pivots,
         'default_values': default_values,
-        'formatting_dict': formatting_dict
+        'formatting_dict': formatting_dict,
+        'initial_filters': initial_filters
     }
     
     all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
@@ -357,16 +359,16 @@ def create_pivot_html(df,
         
         <div class="filters-section">
             <label class="filters-label">Global Filter Query Builder</label>
-            <div id="queryBuilderContainer" class="qb-container">
-                <!-- Recursive Query Builder Roots Here -->
-            </div>
-            <div class="saved-views-row" style="display: flex; gap: 8px; margin-top: 10px; align-items: center;">
+            <div class="saved-views-row" style="display: flex; gap: 8px; margin-bottom: 10px; align-items: center;">
                 <select id="savedViewsSelect" class="qb-logic" style="flex: 1; max-width: 200px;">
                     <option value="">-- Saved Views --</option>
                 </select>
                 <button class="qb-btn" onclick="loadSelectedView()" title="Load selected view">📂 Load</button>
                 <button class="qb-btn" onclick="promptSaveView()" title="Save current filters as a view">💾 Save</button>
                 <button class="qb-btn" onclick="deleteSelectedView()" title="Delete selected view" style="background: #dc3545;">🗑️ Delete</button>
+            </div>
+            <div id="queryBuilderContainer" class="qb-container">
+                <!-- Recursive Query Builder Roots Here -->
             </div>
             <div class="filters-helper" style="margin-top: 8px;">
                 <span>Build complex logic with Groups and Rules. Save views for quick access.</span>
@@ -814,19 +816,25 @@ def create_pivot_html(df,
                 // Numeric Column Filters (from grid column menu)
                 for (const col in numericFilters) {
                     const filter = numericFilters[col];
-                    if (filter.operator === 'none') continue;
+                    if (!filter || filter.operator === 'none') continue;
                     
                     const rowVal = parseFloat(row[col]);
-                    if (isNaN(rowVal)) return false;
-                    
                     const v1 = parseFloat(filter.value1);
                     const v2 = parseFloat(filter.value2);
                     
                     if (filter.operator === 'equals' && rowVal !== v1) return false;
                     if (filter.operator === 'notEquals' && rowVal === v1) return false;
                     if (filter.operator === 'greaterThan' && rowVal <= v1) return false;
+                    if (filter.operator === 'greaterThanOrEqual' && rowVal < v1) return false;
                     if (filter.operator === 'lessThan' && rowVal >= v1) return false;
-                    if (filter.operator === 'between' && (rowVal < v1 || rowVal > v2)) return false;
+                    if (filter.operator === 'lessThanOrEqual' && rowVal > v1) return false;
+                    if (filter.operator === 'between') {
+                        if (isNaN(v1) || isNaN(v2)) continue; // Skip if incomplete
+                        if (rowVal < v1 || rowVal > v2) return false;
+                    }
+                    
+                    // If operator is set but rowVal is NaN (and not skipping), it fails
+                    if (filter.operator !== 'none' && isNaN(rowVal)) return false;
                 }
                 
                 // Global Filters (Recursive Tree)
@@ -1618,18 +1626,98 @@ def create_pivot_html(df,
         renderPivotTable();
         // QUERY BUILDER IMPLEMENTATION
         
-        let queryTree = {
+        // Initial Global Filters from Python
+        const initialFilters = ''' + (json.dumps(initial_filters) if initial_filters else 'null') + ''';
+        
+        let queryTree = initialFilters || {
             type: 'group',
             id: 'root',
             logic: 'AND',
             children: [] 
         };
         
+        // Saved Views Implementation
+        function getSavedViews() {
+            const views = localStorage.getItem('pivotTableSavedViews');
+            return views ? JSON.parse(views) : {};
+        }
+        
+        function saveFilterView(name) {
+            const views = getSavedViews();
+            views[name] = queryTree;
+            localStorage.setItem('pivotTableSavedViews', JSON.stringify(views));
+            renderSavedViewsOptions();
+            alert('View "' + name + '" saved!');
+        }
+        
+        function deleteFilterView(name) {
+            const views = getSavedViews();
+            if (views[name]) {
+                delete views[name];
+                localStorage.setItem('pivotTableSavedViews', JSON.stringify(views));
+                renderSavedViewsOptions();
+            }
+        }
+        
+        function renderSavedViewsOptions() {
+            const views = getSavedViews();
+            const select = document.getElementById('savedViewsSelect');
+            select.innerHTML = '<option value="">-- Saved Views --</option>';
+            
+            Object.keys(views).sort().forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            });
+        }
+        
+        function promptSaveView() {
+            const name = prompt("Enter a name for this view:");
+            if (name) {
+                if (getSavedViews()[name] && !confirm("Overwrite existing view '" + name + "'?")) return;
+                saveFilterView(name);
+            }
+        }
+        
+        function loadSelectedView() {
+            const name = document.getElementById('savedViewsSelect').value;
+            if (!name) return;
+            
+            const views = getSavedViews();
+            if (views[name]) {
+                queryTree = JSON.parse(JSON.stringify(views[name]));
+                renderQueryBuilder();
+                checkSyncState(); // Blur the table as it's now out of sync with last query
+                alert('View "' + name + '" loaded.');
+            }
+        }
+        
+        function deleteSelectedView() {
+            const name = document.getElementById('savedViewsSelect').value;
+            if (!name) return;
+            
+            if (confirm("Are you sure you want to delete view '" + name + "'?")) {
+                deleteFilterView(name);
+            }
+        }
         function renderQueryBuilder() {
             const container = document.getElementById('queryBuilderContainer');
-            container.innerHTML = '';
-            container.appendChild(renderFilterGroup(queryTree, true));
+            if (container) {
+                container.innerHTML = '';
+                container.appendChild(renderFilterGroup(queryTree, true));
+            }
+            if (typeof updateIncompleteStatus === 'function') updateIncompleteStatus();
         }
+
+        // Initialize Saved Views
+        document.addEventListener('DOMContentLoaded', () => {
+             renderSavedViewsOptions();
+             renderQueryBuilder();
+             
+             // Check initial sync state to show blur if initial filters are present
+             checkSyncState();
+        });
 
         function createId() {
             return 'node_' + Math.random().toString(36).substr(2, 9);
@@ -2357,5 +2445,15 @@ if __name__ == "__main__":
             },
             'ModeMargin': {'val_col': 'Margin', 'agg': 'mode', 'fmt': 'decimal2'},
             'StdMargin': {'val_col': 'Margin', 'agg': 'std', 'fmt': 'decimal4'}
-        }
+        },
+        initial_filters={
+            "type": "group",
+            "id": "root",
+            "logic": "AND",
+            "children": [
+                 { "type": "rule", "id": "demo_rule_1", "column": "Region", "operator": "equals", "value": "North" },
+                 { "type": "rule", "id": "demo_rule_2", "column": "Sales", "operator": "greaterThan", "value": "50000" }
+            ]
+        },
+        debug=True
     )
