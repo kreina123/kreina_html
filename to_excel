@@ -53,9 +53,11 @@ def create_pivot_html(df,
     if formatting_dict:
         for col, conf in formatting_dict.items():
             if isinstance(conf, dict):
-                 # Add to numeric/value cols
-                 if col not in all_numeric_cols:
-                     all_numeric_cols.append(col)
+                 # Add to numeric/value cols ONLY if it's a derived column (not in DF)
+                 # If it is in DF, we respect the original type detection (select_dtypes)
+                 if col not in df.columns:
+                     if col not in all_numeric_cols:
+                         all_numeric_cols.append(col)
                  
                  # Add to all_cols if it exists in DF (so it appears in column lists)
                  if col in df.columns and col not in all_cols:
@@ -675,6 +677,7 @@ def create_pivot_html(df,
             
             const values = rows.map(r => {
                 const val = r[valCol];
+                if (typeof val === 'boolean') return val ? 1 : 0;
                 return (val === null || val === undefined) ? null : parseFloat(val);
             });
             
@@ -1072,10 +1075,12 @@ def create_pivot_html(df,
                 }
             } else {
                 numericFilters[col][field] = value;
+                numericFilters[col][field] = value;
                 if (field === 'operator') renderNumericInputs(col);
             }
         }
         
+
         function renderNumericInputs(col) {
             const container = document.getElementById('numeric-inputs-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
             if (!container) return;
@@ -1084,29 +1089,51 @@ def create_pivot_html(df,
             let html = '';
             
             if (isBoolean) {
-                const opSelect = container.parentElement.querySelector('.numeric-filter-select');
-                if (opSelect) {
-                    opSelect.innerHTML = `
-                        <option value="none" ${filter.operator === 'none' ? 'selected' : ''}>None</option>
-                        <option value="equals" ${filter.operator === 'equals' ? 'selected' : ''}>Is (=)</option>
-                        <option value="notEquals" ${filter.operator === 'notEquals' ? 'selected' : ''}>Is Not (!=)</option>
-                    `;
-                }
-                if (filter.operator !== 'none') {
-                    html = '<select class="numeric-filter-input" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">' +
-                           '<option value="True" ' + (filter.value1 === 'True' ? 'selected' : '') + '>True</option>' +
-                           '<option value="False" ' + (filter.value1 === 'False' ? 'selected' : '') + '>False</option>' +
-                           '</select>';
-                    if (!filter.value1) {
-                        filter.value1 = 'True';
-                        // Re-trigger update if we just set a default
-                        setTimeout(() => updateNumericFilter(col, 'value1', 'True'), 0);
+                // Check if aggregated numeric
+                const config = formattingDict[col] || {};
+                const isAggregatedNumeric = config.agg && config.agg !== 'mode';
+                
+                if (!isAggregatedNumeric) {
+                    const opSelect = container.parentElement.querySelector('.numeric-filter-select');
+                    if (opSelect) {
+                        opSelect.innerHTML = `
+                            <option value="none" ${filter.operator === 'none' ? 'selected' : ''}>None</option>
+                            <option value="equals" ${filter.operator === 'equals' ? 'selected' : ''}>Is (=)</option>
+                            <option value="notEquals" ${filter.operator === 'notEquals' ? 'selected' : ''}>Is Not (!=)</option>
+                        `;
                     }
+                    
+                    if (filter.operator !== 'none') {
+                        html = '<select class="numeric-filter-input" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">' +
+                               '<option value="True" ' + (filter.value1 === 'True' ? 'selected' : '') + '>True</option>' +
+                               '<option value="False" ' + (filter.value1 === 'False' ? 'selected' : '') + '>False</option>' +
+                               '</select>';
+                        if (!filter.value1) {
+                            filter.value1 = 'True';
+                            // Re-trigger update if we just set a default
+                            setTimeout(() => updateNumericFilter(col, 'value1', 'True'), 0);
+                        }
+                    }
+                } else {
+                    // It is aggregated numeric: Fall through to standard numeric logic
+                    // We need to ensure the standard generic 'numeric-filter-select' options are restored/preserved 
+                    // if they were somehow overwritten. Note: renderNumericInputs is called specifically when operator changes usually.
+                    // The standard dropdown is rendered in 'renderPivotTable', not here.
                 }
-            } else if (filter.operator === 'between') {
-                html = '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + (filter.value2 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
+            } 
+            
+            // If it was boolean-non-agg, html is set above.
+            // If it was boolean-agg, html is empty, so we check the standard conditions below.
+            // If it was not boolean, standard conditions below apply.
+            
+            const config = formattingDict[col] || {};
+            const isAggregatedNumeric = config.agg && config.agg !== 'mode';
+            const treatAsBoolean = isBoolean && !isAggregatedNumeric;
+            
+            if (!treatAsBoolean && filter.operator === 'between') {
+                html = '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + (filter.value1 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + (filter.value2 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
             } else if (filter.operator !== 'none') {
-                html = '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
+                html = '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
             }
             container.innerHTML = html;
         }
@@ -1273,9 +1300,24 @@ def create_pivot_html(df,
                 dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'operator\\', this.value)">';
                 
                 if (isBoolean) {
-                    dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
-                    dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Is</option>';
-                    dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Is Not</option>';
+                    const config = formattingDict[col] || {};
+                    const isAggregatedNumeric = config.agg && config.agg !== 'mode';
+                    
+                    if (!isAggregatedNumeric) {
+                        dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
+                        dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Is</option>';
+                        dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Is Not</option>';
+                    } else {
+                        // Use numeric options
+                        dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
+                        dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Equals (=)</option>';
+                        dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Not equals (!=)</option>';
+                        dropdownsHtml += '<option value="greaterThan"' + (filter.operator === 'greaterThan' ? ' selected' : '') + '>Greater than (>)</option>';
+                        dropdownsHtml += '<option value="greaterThanOrEqual"' + (filter.operator === 'greaterThanOrEqual' ? ' selected' : '') + '>Greater than or equal (>=)</option>';
+                        dropdownsHtml += '<option value="lessThan"' + (filter.operator === 'lessThan' ? ' selected' : '') + '>Less than (<)</option>';
+                        dropdownsHtml += '<option value="lessThanOrEqual"' + (filter.operator === 'lessThanOrEqual' ? ' selected' : '') + '>Less than or equal (<=)</option>';
+                        dropdownsHtml += '<option value="between"' + (filter.operator === 'between' ? ' selected' : '') + '>Between</option>';
+                    }
                 } else {
                     dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
                     dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Equals (=)</option>';
@@ -1290,15 +1332,25 @@ def create_pivot_html(df,
                 dropdownsHtml += '<div id="numeric-inputs-' + safeCol + '">';
                 
                 if (isBoolean && filter.operator !== 'none') {
-                    if (!filter.value1) filter.value1 = 'True';
-                    dropdownsHtml += '<select class="numeric-filter-input" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">' +
-                                     '<option value="True" ' + (filter.value1 === 'True' ? 'selected' : '') + '>True</option>' +
-                                     '<option value="False" ' + (filter.value1 === 'False' ? 'selected' : '') + '>False</option>' +
-                                     '</select>';
+                    const config = formattingDict[col] || {};
+                    const isAggregatedNumeric = config.agg && config.agg !== 'mode';
+                    
+                    if (!isAggregatedNumeric) {
+                        if (!filter.value1) filter.value1 = 'True';
+                        dropdownsHtml += '<select class="numeric-filter-input" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">' +
+                                         '<option value="True" ' + (filter.value1 === 'True' ? 'selected' : '') + '>True</option>' +
+                                         '<option value="False" ' + (filter.value1 === 'False' ? 'selected' : '') + '>False</option>' +
+                                         '</select>';
+                    } else {
+                        // Treated as numeric below
+                        if (filter.operator !== 'between') {
+                             dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
+                        }
+                    }
                 } else if (filter.operator === 'between') {
-                    dropdownsHtml += '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + filter.value2 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
+                    dropdownsHtml += '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + (filter.value1 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + (filter.value2 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
                 } else if (filter.operator !== 'none') {
-                    dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
+                    dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" oninput="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
                 }
                 dropdownsHtml += '</div>'; // End of numeric-inputs
                 
@@ -1417,11 +1469,19 @@ def create_pivot_html(df,
                     const rowVal = (aggVal === null || aggVal === undefined) ? NaN : parseFloat(aggVal);
                     
                     if (allBooleanCols.includes(col)) {
-                         const bVal = String(aggVal).toLowerCase() === 'true';
+                        // FIX: Only treat as boolean if NOT aggregated to a number (e.g. mode)
+                        // If it's sum/avg/count, it's numeric.
+                        const config = formattingDict[col] || {};
+                        const isAggregatedNumeric = config.agg && config.agg !== 'mode';
+                        
+                        if (!isAggregatedNumeric) {
+                             const bVal = String(aggVal).toLowerCase() === 'true';
                          const bV1 = String(filter.value1).toLowerCase() === 'true';
                          if (filter.operator === 'equals' && bVal !== bV1) passFilters = false;
                          if (filter.operator === 'notEquals' && bVal === bV1) passFilters = false;
+                         if (filter.operator === 'notEquals' && bVal === bV1) passFilters = false;
                          return;
+                        }
                     }
                     
                     const v1 = parseFloat(filter.value1);
@@ -1974,12 +2034,16 @@ def create_pivot_html(df,
                     <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Is</option>
                     <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Is Not</option>
                 `;
+                // Convert boolean literals to strings for comparison
+                const strVal = String(rule.value !== undefined && rule.value !== null ? rule.value : 'True');
+                
                 valInput = document.createElement('select');
                 valInput.innerHTML = `
-                    <option value="True" ${rule.value === 'True' ? 'selected' : ''}>True</option>
-                    <option value="False" ${rule.value === 'False' ? 'selected' : ''}>False</option>
+                    <option value="True" ${strVal === 'True' || strVal === 'true' ? 'selected' : ''}>True</option>
+                    <option value="False" ${strVal === 'False' || strVal === 'false' ? 'selected' : ''}>False</option>
                 `;
-                if (!rule.value) rule.value = 'True';
+                // Ensure rule.value is stored as the string we selected
+                rule.value = (strVal === 'False' || strVal === 'false') ? 'False' : 'True';
             } else if (isNumeric) {
                 opSelect.innerHTML = `
                     <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>=</option>
@@ -2156,9 +2220,9 @@ def create_pivot_html(df,
                 isClearingForFocus = false;
             });
 
-            input.addEventListener('input', (e) => {
+            input.addEventListener('change', (e) => {
                 const newVal = e.target.value;
-                // If the value matches one of the datalist options exactly, or if user is typing...
+                // Only trigger update on commit (blur/enter) to maintain focus while typing
                 lastValue = newVal;
                 onValueChange(newVal);
             });
@@ -2612,5 +2676,5 @@ if __name__ == "__main__":
                  { "type": "rule", "id": "demo_rule_2", "column": "Sales", "operator": "greaterThan", "value": "50000" }
             ]
         },
-        debug=False
+        debug=True
     )
