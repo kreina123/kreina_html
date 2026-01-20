@@ -44,21 +44,30 @@ def create_pivot_html(df,
         'initial_filters': initial_filters
     }
     
-    all_numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    all_numeric_cols = df.select_dtypes(include=['number', 'bool']).columns.tolist()
     all_non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+    all_boolean_cols = df.select_dtypes(include=['bool']).columns.tolist()
+    all_cols = list(df.columns)
     
-    # Add derived columns from formatting_dict to list of available numeric columns
-    # This ensures they show up in the "Value Column" and "Weights Column" selectors
+    # Add derived columns from formatting_dict
     if formatting_dict:
         for col, conf in formatting_dict.items():
-            if isinstance(conf, dict) and conf.get('agg') == 'weighted_avg':
-                if col not in all_numeric_cols:
-                    all_numeric_cols.append(col)
+            if isinstance(conf, dict):
+                 # Add to numeric/value cols
+                 if col not in all_numeric_cols:
+                     all_numeric_cols.append(col)
+                 
+                 # Add to all_cols if it exists in DF (so it appears in column lists)
+                 if col in df.columns and col not in all_cols:
+                      all_cols.append(col)
+                 
+                 # Add to pivot_cols candidates (Pivots dropdown)
+                 # We allow derived columns to be pivots if requested (assuming user wants them)
+                 if col not in all_non_numeric_cols:
+                      all_non_numeric_cols.append(col)
 
     if pivot_cols is None:
         pivot_cols = all_non_numeric_cols
-    elif isinstance(pivot_cols, str):
-        pivot_cols = [pivot_cols]
     
     if value_cols is None:
         value_cols = [c for c in all_numeric_cols if c in df.columns]
@@ -89,9 +98,11 @@ def create_pivot_html(df,
     if formatting_dict is None:
         formatting_dict = {}
 
-    # df_json = df.to_json(orient='records') # Removed to save memory
     formatting_dict_json = json.dumps(formatting_dict)
     numeric_cols_json = json.dumps(all_numeric_cols)
+    boolean_cols_json = json.dumps(all_boolean_cols)
+    all_cols = list(df.columns)
+    all_cols_json = json.dumps(all_cols)
     
     pivot_options = '\n'.join([
         f'<option value="{col}" {"selected" if col in default_pivots else ""}>{col}</option>' 
@@ -213,12 +224,12 @@ def create_pivot_html(df,
         .cell-empty { background: #fcfcfc; }
         
         /* Filter Dropdown */
-        .filter-dropdown { position: fixed; min-width: 180px; background: white; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; display: none; color: #333; font-size: 11px; border: 1px solid #c0c0c0; }
+        .filter-dropdown { position: fixed; min-width: 220px; background: white; border-radius: 4px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); z-index: 10001; display: none; color: #333; font-size: 11px; border: 1px solid #c0c0c0; }
         .filter-dropdown.show { display: block; }
         .filter-dropdown-header { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background: #f9f9f9; font-weight: 600; font-size: 11px; }
         .filter-dropdown-close { cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666; }
         .filter-dropdown-close:hover { color: #000; }
-        .filter-dropdown-body { padding: 8px; max-height: 250px; overflow-y: auto; }
+        .filter-dropdown-body { padding: 8px; max-height: 300px; overflow-y: auto; }
         .filter-search { width: 100%; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; margin-bottom: 8px; font-family: inherit; }
         .filter-search:focus { outline: none; border-color: #667eea; }
         .filter-actions-row { display: flex; gap: 12px; margin-bottom: 8px; font-size: 11px; }
@@ -387,7 +398,7 @@ def create_pivot_html(df,
                 <span>📋</span> Copy View to Clipboard
             </button>
             <label class="toolbar-item" title="Toggle group subtotal rows in export">
-                <input type="checkbox" id="includeSubtotals">
+                <input type="checkbox" id="includeSubtotals" checked>
                 Include Group Subtotals
             </label>
             <div class="toolbar-separator"></div>
@@ -403,6 +414,7 @@ def create_pivot_html(df,
             </button>
             <div class="toolbar-separator"></div>
             <span style="font-size: 12px; color: #6c757d;" id="rowCount">Ready</span>
+            <span style="font-size: 12px; color: #adb5bd; margin-left: 8px;" id="totalCount"></span>
         </div>
         
         <div id="toast" class="toast">Copied to clipboard!</div>
@@ -453,6 +465,8 @@ def create_pivot_html(df,
         let isSyncing = false;
         const formattingDict = ''' + formatting_dict_json + ''';
         const allNumericCols = ''' + numeric_cols_json + ''';
+        const allBooleanCols = ''' + boolean_cols_json + ''';
+        const allAvailableCols = ''' + all_cols_json + ''';
         const collapsedGroups = new Set();
         const pivotFilters = {};
         const numericFilters = {};
@@ -796,7 +810,8 @@ def create_pivot_html(df,
             cols.forEach(col => {
                 if (!pivotFilters[col]) {
                     const uniqueValues = [...new Set(allRecords.map(row => {
-                        const val = row[col];
+                        let val = row[col];
+                        if (typeof val === 'boolean') val = val ? 'True' : 'False';
                         return val !== null && val !== undefined ? String(val) : '(blank)';
                     }))];
                     pivotFilters[col] = new Set(uniqueValues);
@@ -809,33 +824,25 @@ def create_pivot_html(df,
                 // Pivot Filters
                 for (const col in pivotFilters) {
                     if (col === excludeCol) continue;
-                    const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
-                    if (!pivotFilters[col].has(val)) return false;
+                    let val = row[col];
+                    if (typeof val === 'boolean') val = val ? 'True' : 'False';
+                    const valStr = val !== null && val !== undefined ? String(val) : '(blank)';
+                    if (!pivotFilters[col].has(valStr)) return false;
                 }
                 
-                // Numeric Column Filters (from grid column menu)
-                for (const col in numericFilters) {
-                    const filter = numericFilters[col];
-                    if (!filter || filter.operator === 'none') continue;
-                    
-                    const rowVal = parseFloat(row[col]);
-                    const v1 = parseFloat(filter.value1);
-                    const v2 = parseFloat(filter.value2);
-                    
-                    if (filter.operator === 'equals' && rowVal !== v1) return false;
-                    if (filter.operator === 'notEquals' && rowVal === v1) return false;
-                    if (filter.operator === 'greaterThan' && rowVal <= v1) return false;
-                    if (filter.operator === 'greaterThanOrEqual' && rowVal < v1) return false;
-                    if (filter.operator === 'lessThan' && rowVal >= v1) return false;
-                    if (filter.operator === 'lessThanOrEqual' && rowVal > v1) return false;
-                    if (filter.operator === 'between') {
-                        if (isNaN(v1) || isNaN(v2)) continue; // Skip if incomplete
-                        if (rowVal < v1 || rowVal > v2) return false;
-                    }
-                    
-                    // If operator is set but rowVal is NaN (and not skipping), it fails
-                    if (filter.operator !== 'none' && isNaN(rowVal)) return false;
-                }
+                // Numeric Column Filters (from grid column menu) - NOW POST-AGGREGATION
+                // We no longer filter raw records here for numeric value columns.
+                // Boolean column filters on raw data (if they are treated as Dimensions) could stay, 
+                // but if they are treated as Values (Aggregates), they should also be post-agg.
+                // For now, we assume numeric/value column filters are applied in renderTree.
+                
+                // Exception: If a Boolean column is used as a Dimension (Pivot), it is handled by pivotFilters above.
+                // If it's used as a Value, it shouldn't be here in getFilteredData for raw record filtering.
+                
+                 /* 
+                  * PREVIOUS LOGIC REMOVED
+                  * Post-aggregation logic moved to renderTree/renderPivotTable
+                  */
                 
                 // Global Filters (Recursive Tree)
                 if (globalFilters && globalFilters.type === 'group') {
@@ -864,6 +871,13 @@ def create_pivot_html(df,
                 // Numeric handling
                 const isNumericCol = allNumericCols.includes(col);
                 if (isNumericCol) {
+                    if (allBooleanCols.includes(col)) {
+                        const bVal = String(rowVal).toLowerCase() === 'true';
+                        const bV1 = String(v1).toLowerCase() === 'true';
+                        if (op === 'equals') return bVal === bV1;
+                        if (op === 'notEquals') return bVal !== bV1;
+                        return true; // For boolean, only equals/notEquals are meaningful. Other ops are ignored.
+                    }
                     const numVal = parseFloat(rowVal);
                     const numV1 = parseFloat(v1);
                     const numV2 = parseFloat(v2);
@@ -1009,7 +1023,8 @@ def create_pivot_html(df,
         function selectAll(col) {
             const contextData = getFilteredData(col);
             const availableValues = [...new Set(contextData.map(row => {
-                const val = row[col];
+                let val = row[col];
+                if (typeof val === 'boolean') val = val ? 'True' : 'False';
                 return val !== null && val !== undefined ? String(val) : '(blank)';
             }))];
             availableValues.forEach(val => pivotFilters[col].add(val));
@@ -1065,8 +1080,30 @@ def create_pivot_html(df,
             const container = document.getElementById('numeric-inputs-' + col.replace(/[^a-zA-Z0-9]/g, '_'));
             if (!container) return;
             const filter = numericFilters[col] || { operator: 'none', value1: '', value2: '' };
+            const isBoolean = allBooleanCols.includes(col);
             let html = '';
-            if (filter.operator === 'between') {
+            
+            if (isBoolean) {
+                const opSelect = container.parentElement.querySelector('.numeric-filter-select');
+                if (opSelect) {
+                    opSelect.innerHTML = `
+                        <option value="none" ${filter.operator === 'none' ? 'selected' : ''}>None</option>
+                        <option value="equals" ${filter.operator === 'equals' ? 'selected' : ''}>Is (=)</option>
+                        <option value="notEquals" ${filter.operator === 'notEquals' ? 'selected' : ''}>Is Not (!=)</option>
+                    `;
+                }
+                if (filter.operator !== 'none') {
+                    html = '<select class="numeric-filter-input" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">' +
+                           '<option value="True" ' + (filter.value1 === 'True' ? 'selected' : '') + '>True</option>' +
+                           '<option value="False" ' + (filter.value1 === 'False' ? 'selected' : '') + '>False</option>' +
+                           '</select>';
+                    if (!filter.value1) {
+                        filter.value1 = 'True';
+                        // Re-trigger update if we just set a default
+                        setTimeout(() => updateNumericFilter(col, 'value1', 'True'), 0);
+                    }
+                }
+            } else if (filter.operator === 'between') {
                 html = '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + (filter.value2 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
             } else if (filter.operator !== 'none') {
                 html = '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + (filter.value1 || '') + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
@@ -1081,6 +1118,12 @@ def create_pivot_html(df,
             closeAllDropdowns();
         }
         
+        function handleFilterKeydown(event) {
+            if (event.key === 'Enter') {
+                applyColumnFilter();
+            }
+        }
+        
         function applyColumnFilter() {
             applyFilters();
             closeAllDropdowns();
@@ -1089,7 +1132,8 @@ def create_pivot_html(df,
         function isColumnFiltered(col, type) {
             if (type === 'pivot') {
                 const allValues = [...new Set(allRecords.map(row => {
-                    const val = row[col];
+                    let val = row[col];
+                    if (typeof val === 'boolean') val = val ? 'True' : 'False';
                     return val !== null && val !== undefined ? String(val) : '(blank)';
                 }))];
                 return pivotFilters[col] && pivotFilters[col].size < allValues.length;
@@ -1180,7 +1224,14 @@ def create_pivot_html(df,
             html += '</tr></tbody></table>';
             
             target.innerHTML = html;
-            document.getElementById('rowCount').textContent = 'Aggregated view loaded';
+            
+            // Update counts
+            const visibleRows = target.querySelectorAll('tr.group-row:not(.hidden)').length;
+            const totalRecs = allRecords.length;
+            const filteredRecs = filteredData.length;
+            
+            document.getElementById('rowCount').textContent = visibleRows + ' rows shown';
+            document.getElementById('totalCount').textContent = `(Source: ${totalRecs.toLocaleString()} records)`;
             
             // Build filter dropdowns
             let dropdownsHtml = '';
@@ -1189,7 +1240,8 @@ def create_pivot_html(df,
                 const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
                 const contextData = getFilteredData(col);
                 const uniqueValues = [...new Set(contextData.map(row => {
-                    const val = row[col];
+                    let val = row[col];
+                    if (typeof val === 'boolean') val = val ? 'True' : 'False';
                     return val !== null && val !== undefined ? String(val) : '(blank)';
                 }))].sort(getSortComparator(col));
                 
@@ -1213,74 +1265,57 @@ def create_pivot_html(df,
                 const safeCol = col.replace(/[^a-zA-Z0-9]/g, '_');
                 if (!numericFilters[col]) numericFilters[col] = { operator: 'none', value1: '', value2: '' };
                 const filter = numericFilters[col];
+                const isBoolean = allBooleanCols.includes(col);
                 
                 dropdownsHtml += '<div class="filter-dropdown" id="dropdown-' + safeCol + '">';
                 dropdownsHtml += '<div class="filter-dropdown-header"><span>Filter: ' + col + '</span><span class="filter-dropdown-close" onclick="closeAllDropdowns()">✕</span></div>';
                 dropdownsHtml += '<div class="filter-dropdown-body">';
                 dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'operator\\', this.value)">';
-                dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
-                dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Equals</option>';
-                dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Not equals</option>';
-                dropdownsHtml += '<option value="greaterThan"' + (filter.operator === 'greaterThan' ? ' selected' : '') + '>Greater than</option>';
-                dropdownsHtml += '<option value="lessThan"' + (filter.operator === 'lessThan' ? ' selected' : '') + '>Less than</option>';
-                dropdownsHtml += '<option value="between"' + (filter.operator === 'between' ? ' selected' : '') + '>Between</option>';
+                
+                if (isBoolean) {
+                    dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
+                    dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Is</option>';
+                    dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Is Not</option>';
+                } else {
+                    dropdownsHtml += '<option value="none"' + (filter.operator === 'none' ? ' selected' : '') + '>No filter</option>';
+                    dropdownsHtml += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>Equals (=)</option>';
+                    dropdownsHtml += '<option value="notEquals"' + (filter.operator === 'notEquals' ? ' selected' : '') + '>Not equals (!=)</option>';
+                    dropdownsHtml += '<option value="greaterThan"' + (filter.operator === 'greaterThan' ? ' selected' : '') + '>Greater than (>)</option>';
+                    dropdownsHtml += '<option value="greaterThanOrEqual"' + (filter.operator === 'greaterThanOrEqual' ? ' selected' : '') + '>Greater than or equal (>=)</option>';
+                    dropdownsHtml += '<option value="lessThan"' + (filter.operator === 'lessThan' ? ' selected' : '') + '>Less than (<)</option>';
+                    dropdownsHtml += '<option value="lessThanOrEqual"' + (filter.operator === 'lessThanOrEqual' ? ' selected' : '') + '>Less than or equal (<=)</option>';
+                    dropdownsHtml += '<option value="between"' + (filter.operator === 'between' ? ' selected' : '') + '>Between</option>';
+                }
                 dropdownsHtml += '</select>';
                 dropdownsHtml += '<div id="numeric-inputs-' + safeCol + '">';
-                if (filter.operator === 'between') {
-                    dropdownsHtml += '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + filter.value2 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)"></div>';
+                
+                if (isBoolean && filter.operator !== 'none') {
+                    if (!filter.value1) filter.value1 = 'True';
+                    dropdownsHtml += '<select class="numeric-filter-input" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">' +
+                                     '<option value="True" ' + (filter.value1 === 'True' ? 'selected' : '') + '>True</option>' +
+                                     '<option value="False" ' + (filter.value1 === 'False' ? 'selected' : '') + '>False</option>' +
+                                     '</select>';
+                } else if (filter.operator === 'between') {
+                    dropdownsHtml += '<div class="numeric-range-inputs"><input type="number" class="numeric-filter-input" placeholder="Min" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)"><span>to</span><input type="number" class="numeric-filter-input" placeholder="Max" value="' + filter.value2 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value2\\', this.value)" onkeydown="handleFilterKeydown(event)"></div>';
                 } else if (filter.operator !== 'none') {
-                    dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)">';
+                    dropdownsHtml += '<input type="number" class="numeric-filter-input" placeholder="Value" value="' + filter.value1 + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'value1\\', this.value)" onkeydown="handleFilterKeydown(event)">';
                 }
-                dropdownsHtml += '</div>';
-                
-                // Aggregation Settings
-                const colConf = formattingDict[col] || {};
-                const currentAgg = colConf.agg || 'sum';
-                const currentWeights = colConf.weights_col || '';
-                const currentNullOnNulls = colConf.null_on_nulls || false;
-                
-                dropdownsHtml += '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">';
-                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Aggregation</label>';
-                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'agg\\', this.value)">';
-                ['sum', 'avg', 'weighted_avg', 'min', 'max', 'count', 'median', 'mode', 'std'].forEach(op => {
-                    dropdownsHtml += '<option value="' + op + '"' + (currentAgg === op ? ' selected' : '') + '>' + op.charAt(0).toUpperCase() + op.slice(1).replace('_', ' ') + '</option>';
-                });
-                dropdownsHtml += '</select>';
-                
-                dropdownsHtml += '<div id="weights-select-' + safeCol + '" style="display: ' + (currentAgg === 'weighted_avg' ? 'block' : 'none') + ';">';
-                
-                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Value Column (for Derived)</label>';
-                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'val_col\\', this.value)">';
-                dropdownsHtml += '<option value="' + col + '">Use ' + col + '</option>';
-                allNumericCols.forEach(nc => {
-                    if (nc !== col) dropdownsHtml += '<option value="' + nc + '"' + (colConf.val_col === nc ? ' selected' : '') + '>' + nc + '</option>';
-                });
-                dropdownsHtml += '</select>';
-
-                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Weights Column</label>';
-                dropdownsHtml += '<select class="numeric-filter-select" onchange="updateNumericFilter(\\'' + col + '\\', \\'weights_col\\', this.value)">';
-                dropdownsHtml += '<option value="">Select weight...</option>';
-                allNumericCols.forEach(nc => {
-                    dropdownsHtml += '<option value="' + nc + '"' + (currentWeights === nc ? ' selected' : '') + '>' + nc + '</option>';
-                });
-                dropdownsHtml += '</select></div>';
-                
-                dropdownsHtml += '<label class="filter-option" style="margin-top: 4px;"><input type="checkbox" ' + (currentNullOnNulls ? 'checked' : '') + ' onchange="updateNumericFilter(\\'' + col + '\\', \\'null_on_nulls\\', this.checked)"><span>null on nulls</span></label>';
+                dropdownsHtml += '</div>'; // End of numeric-inputs
                 
                 // Decimal Control
+                const colConf = formattingDict[col] || {};
                 const fmt = colConf.fmt || '';
                 const decMatch = fmt.match(/decimal(\d+)/);
                 const decs = decMatch ? parseInt(decMatch[1]) : 2;
-                dropdownsHtml += '<div style="margin-top: 8px;">';
-                dropdownsHtml += '<label style="font-size: 10px; margin-bottom: 4px; display: block;">Display Decimals</label>';
-                dropdownsHtml += '<input type="number" class="numeric-filter-input" min="0" max="10" value="' + decs + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'decimals\\', this.value)">';
+                
+                dropdownsHtml += '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">';
+                dropdownsHtml += '<label style="font-size: 10px; font-weight: 700; color: #666; text-transform: uppercase; margin-bottom: 6px; display: block;">Display Decimals</label>';
+                dropdownsHtml += '<input type="number" class="numeric-filter-input" min="0" max="10" value="' + decs + '" onchange="updateNumericFilter(\\'' + col + '\\', \\'decimals\\', this.value)" onkeydown="handleFilterKeydown(event)">';
                 dropdownsHtml += '</div>';
                 
-                dropdownsHtml += '</div>';
-                
-                dropdownsHtml += '</div>';
+                dropdownsHtml += '</div>'; // End of filter-dropdown-body
                 dropdownsHtml += '<div class="filter-dropdown-footer"><button class="filter-clear-btn" onclick="clearColumnFilter(\\'' + col + '\\', \\'numeric\\')">Clear</button><button class="filter-apply-btn" onclick="applyColumnFilter()">Apply</button></div>';
-                dropdownsHtml += '</div>';
+                dropdownsHtml += '</div>'; // End of filter-dropdown
             });
             
             document.getElementById('filterDropdowns').innerHTML = dropdownsHtml;
@@ -1303,7 +1338,9 @@ def create_pivot_html(df,
             const col = groupCols[level];
             const groups = {};
             rows.forEach(row => {
-                const key = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
+                let valRaw = row[col];
+                if (typeof valRaw === 'boolean') valRaw = valRaw ? 'True' : 'False';
+                const key = valRaw !== null && valRaw !== undefined ? String(valRaw) : '(blank)';
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(row);
             });
@@ -1358,13 +1395,59 @@ def create_pivot_html(df,
             const sortedKeys = node._sortedKeys || Object.keys(node);
             const groups = node._groups || node;
             
-            sortedKeys.forEach(key => {
+            for (const key of sortedKeys) {
                 const groupPath = parentPath ? parentPath + '>' + key : key;
                 allGroupPaths.push(groupPath);
                 const isCollapsed = collapsedGroups.has(groupPath);
                 const nodeData = groups[key];
                 const hasChildren = nodeData && nodeData._groups;
                 
+                // Post-Aggregation Filtering Logic
+                // We check if this row satisfies all numeric column filters based on its AGGREGATED values.
+                let passFilters = true;
+                
+                 valueCols.forEach(col => {
+                    if (!passFilters) return; // Optimization: stop checking if already failed
+                    
+                    const filter = numericFilters[col];
+                    if (!filter || filter.operator === 'none') return;
+                    
+                    const aggVal = getAggregationResult(nodeData, col);
+                    // Filter Logic
+                    const rowVal = (aggVal === null || aggVal === undefined) ? NaN : parseFloat(aggVal);
+                    
+                    if (allBooleanCols.includes(col)) {
+                         const bVal = String(aggVal).toLowerCase() === 'true';
+                         const bV1 = String(filter.value1).toLowerCase() === 'true';
+                         if (filter.operator === 'equals' && bVal !== bV1) passFilters = false;
+                         if (filter.operator === 'notEquals' && bVal === bV1) passFilters = false;
+                         return;
+                    }
+                    
+                    const v1 = parseFloat(filter.value1);
+                    const v2 = parseFloat(filter.value2);
+                    
+                    if (isNaN(rowVal)) {
+                         // If value is NaN/Null, it generally fails numeric filters unless we want to handle 'IsNull'
+                         passFilters = false; 
+                         return;
+                    }
+
+                    if (filter.operator === 'equals' && rowVal !== v1) passFilters = false;
+                    if (filter.operator === 'notEquals' && rowVal === v1) passFilters = false;
+                    if (filter.operator === 'greaterThan' && rowVal <= v1) passFilters = false;
+                    if (filter.operator === 'greaterThanOrEqual' && rowVal < v1) passFilters = false;
+                    if (filter.operator === 'lessThan' && rowVal >= v1) passFilters = false;
+                    if (filter.operator === 'lessThanOrEqual' && rowVal > v1) passFilters = false;
+                    if (filter.operator === 'between') {
+                        if (!isNaN(v1) && !isNaN(v2)) {
+                             if (rowVal < v1 || rowVal > v2) passFilters = false;
+                        }
+                    }
+                });
+                
+                if (!passFilters) continue; // Skip rendering this row if it doesn't match
+
                 // Correctly apply 'hidden' class if parent is collapsed to preserve state across renders
                 html += '<tr class="group-row level-' + level + ' ' + (isCollapsed ? 'collapsed' : '') + ' ' + (isParentCollapsed ? 'hidden' : '') + '" data-path="' + groupPath + '" data-level="' + level + '" data-type="subtotal">';
                 
@@ -1393,7 +1476,7 @@ def create_pivot_html(df,
                 if (hasChildren) {
                     html += renderTree(nodeData, groupCols, valueCols, level + 1, groupPath, isParentCollapsed || isCollapsed);
                 }
-            });
+            }
             
             return html;
         }
@@ -1431,7 +1514,9 @@ def create_pivot_html(df,
         }
         
         function formatValue(val, colName) {
-            if (val === null || val === undefined || isNaN(val)) return '';
+            if (val === null || val === undefined) return '';
+            if (typeof val === 'boolean') return val ? 'True' : 'False';
+            if (isNaN(val)) return String(val);
             const config = formattingDict[colName] || {};
             const fmt = config.fmt || '';
             if (fmt === 'currency') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
@@ -1844,8 +1929,7 @@ def create_pivot_html(df,
             const ruleDiv = document.createElement('div');
             ruleDiv.className = 'qb-rule';
 
-            const pivots = Array.from(document.getElementById('groupBy').options).map(o => o.value);
-            const allCols = [...new Set([...pivots, ...allNumericCols])];
+            const allCols = allAvailableCols;
             
             // 1. Column Searchable Input
             const colInput = document.createElement('input');
@@ -1863,8 +1947,14 @@ def create_pivot_html(df,
                 rule.column = newVal;
                 // Reset operator based on new type
                 const newIsNumeric = allNumericCols.includes(rule.column);
-                rule.operator = newIsNumeric ? 'greaterThan' : 'equals';
-                rule.value = '';
+                const newIsBoolean = allBooleanCols.includes(rule.column);
+                if (newIsBoolean) {
+                    rule.operator = 'equals';
+                    rule.value = 'True';
+                } else {
+                    rule.operator = newIsNumeric ? 'greaterThan' : 'equals';
+                    rule.value = '';
+                }
                 renderQueryBuilder();
                 checkSyncState();
             });
@@ -1876,9 +1966,21 @@ def create_pivot_html(df,
             // 3. Value Input
             let valInput;
             const isNumeric = rule.column && allNumericCols.includes(rule.column);
+            const isBoolean = rule.column && allBooleanCols.includes(rule.column);
             const isDateCol = rule.column && (rule.column.toLowerCase().includes('date') || rule.column.toLowerCase().includes('time'));
              
-            if (isNumeric) {
+            if (isBoolean) {
+                opSelect.innerHTML = `
+                    <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Is</option>
+                    <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Is Not</option>
+                `;
+                valInput = document.createElement('select');
+                valInput.innerHTML = `
+                    <option value="True" ${rule.value === 'True' ? 'selected' : ''}>True</option>
+                    <option value="False" ${rule.value === 'False' ? 'selected' : ''}>False</option>
+                `;
+                if (!rule.value) rule.value = 'True';
+            } else if (isNumeric) {
                 opSelect.innerHTML = `
                     <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>=</option>
                     <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>!=</option>
@@ -2274,6 +2376,13 @@ def pivot_api():
             
             # Handle numeric conversion safely
             if (df[col].dtype.kind in 'bcifu'): # types: bool, complex, signed int, float, unsigned int
+                if df[col].dtype == 'bool':
+                    # Support boolean comparison
+                    b_val = str(v1).lower() == 'true'
+                    if op == 'equals': return df[col] == b_val
+                    elif op == 'notEquals': return df[col] != b_val
+                    return pd.Series(True, index=df.index)
+
                 val1 = float(v1) if v1 is not None and v1 != '' else 0
                 val2 = float(v2) if v2 is not None and v2 != '' else 0
                 
@@ -2503,5 +2612,5 @@ if __name__ == "__main__":
                  { "type": "rule", "id": "demo_rule_2", "column": "Sales", "operator": "greaterThan", "value": "50000" }
             ]
         },
-        debug=True
+        debug=False
     )
