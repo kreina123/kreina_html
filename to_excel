@@ -961,17 +961,41 @@ def create_pivot_html(df,
             if (dropdown) {
                 const th = event.target.closest('th');
                 const rect = th.getBoundingClientRect();
-                dropdown.style.top = (rect.bottom + 1) + 'px';
-                dropdown.style.left = rect.left + 'px';
                 
-                // Simple viewport check
-                if (rect.left + 200 > window.innerWidth) {
-                    dropdown.style.left = (window.innerWidth - 210) + 'px';
+                // Show it first to measure
+                dropdown.classList.add('show');
+                const dropRect = dropdown.getBoundingClientRect();
+                
+                let top = rect.bottom + 1;
+                let left = rect.left;
+                
+                // Viewport collision detection
+                const margin = 10;
+                
+                // Flip up if it goes off bottom
+                if (top + dropRect.height > window.innerHeight) {
+                    const flipTop = rect.top - dropRect.height - 1;
+                    if (flipTop > 0) {
+                        top = flipTop;
+                    } else {
+                        // If it doesn't fit either way, cap it at the bottom of viewport
+                        top = window.innerHeight - dropRect.height - margin;
+                    }
                 }
                 
-                dropdown.classList.add('show');
+                // Horizontal bounds
+                if (left + dropRect.width > window.innerWidth) {
+                    left = window.innerWidth - dropRect.width - margin;
+                }
+                if (left < margin) left = margin;
+                
+                dropdown.style.top = top + 'px';
+                dropdown.style.left = left + 'px';
             }
         }
+        
+        // Close dropdowns on scroll to maintain alignment
+        window.addEventListener('scroll', () => closeAllDropdowns(), { capture: true });
         
         function closeAllDropdowns() {
             document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
@@ -1823,87 +1847,109 @@ def create_pivot_html(df,
             const pivots = Array.from(document.getElementById('groupBy').options).map(o => o.value);
             const allCols = [...new Set([...pivots, ...allNumericCols])];
             
-            // Column Select
-            const colSelect = document.createElement('select');
-            colSelect.className = 'qb-rule-select';
-            colSelect.innerHTML = `<option value="">Select Column...</option>` + 
-                allCols.map(c => `<option value="${c}" ${rule.column === c ? 'selected' : ''}>${c}</option>`).join('');
+            // 1. Column Searchable Input
+            const colInput = document.createElement('input');
+            colInput.className = 'qb-rule-input qb-rule-select';
+            colInput.value = rule.column || '';
+            colInput.placeholder = 'Select Column...';
+            colInput.setAttribute('list', 'cols-' + rule.id);
             
-            // Operator Select
+            const colDataList = document.createElement('datalist');
+            colDataList.id = 'cols-' + rule.id;
+            colDataList.innerHTML = allCols.map(c => `<option value="${c}">`).join('');
+            ruleDiv.appendChild(colDataList);
+            
+            setupSearchableInput(colInput, (newVal) => {
+                rule.column = newVal;
+                // Reset operator based on new type
+                const newIsNumeric = allNumericCols.includes(rule.column);
+                rule.operator = newIsNumeric ? 'greaterThan' : 'equals';
+                rule.value = '';
+                renderQueryBuilder();
+                checkSyncState();
+            });
+            
+            // 2. Operator Select
             const opSelect = document.createElement('select');
             opSelect.className = 'qb-rule-select';
             
-            // Value Input
+            // 3. Value Input
             let valInput;
             const isNumeric = rule.column && allNumericCols.includes(rule.column);
+            const isDateCol = rule.column && (rule.column.toLowerCase().includes('date') || rule.column.toLowerCase().includes('time'));
              
             if (isNumeric) {
                 opSelect.innerHTML = `
                     <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>=</option>
                     <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>!=</option>
                     <option value="greaterThan" ${rule.operator === 'greaterThan' ? 'selected' : ''}>></option>
-                    <option value="greaterThanOrEqual" ${rule.operator === 'greaterThanOrEqual' ? 'selected' : ''}>>= </option>
+                    <option value="greaterThanOrEqual" ${rule.operator === 'greaterThanOrEqual' ? 'selected' : ''}>>=</option>
                     <option value="lessThan" ${rule.operator === 'lessThan' ? 'selected' : ''}><</option>
                     <option value="lessThanOrEqual" ${rule.operator === 'lessThanOrEqual' ? 'selected' : ''}><=</option>
                     <option value="between" ${rule.operator === 'between' ? 'selected' : ''}>Is Between</option>
                 `;
                 valInput = document.createElement('input');
                 valInput.type = 'number';
-                valInput.className = 'qb-rule-input';
-                valInput.value = rule.value || '';
-                valInput.placeholder = 'Value';
+            } else if (isDateCol) {
+                opSelect.innerHTML = `
+                    <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
+                    <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Not Equals (!=)</option>
+                    <option value="greaterThan" ${rule.operator === 'greaterThan' ? 'selected' : ''}>After (>)</option>
+                    <option value="greaterThanOrEqual" ${rule.operator === 'greaterThanOrEqual' ? 'selected' : ''}>On or After (>=)</option>
+                    <option value="lessThan" ${rule.operator === 'lessThan' ? 'selected' : ''}>Before (<)</option>
+                    <option value="lessThanOrEqual" ${rule.operator === 'lessThanOrEqual' ? 'selected' : ''}>On or Before (<=)</option>
+                    <option value="between" ${rule.operator === 'between' ? 'selected' : ''}>Between Dates</option>
+                `;
+                valInput = document.createElement('input');
+                valInput.type = 'date';
             } else {
-                 // Check if column is a date column
-                 const isDateCol = rule.column && (rule.column.toLowerCase().includes('date') || rule.column.toLowerCase().includes('time'));
-                 
-                 if (isDateCol) {
-                     // Date operators
-                     opSelect.innerHTML = `
-                        <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
-                        <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Not Equals (!=)</option>
-                        <option value="greaterThan" ${rule.operator === 'greaterThan' ? 'selected' : ''}>After (>)</option>
-                        <option value="greaterThanOrEqual" ${rule.operator === 'greaterThanOrEqual' ? 'selected' : ''}>On or After (>=)</option>
-                        <option value="lessThan" ${rule.operator === 'lessThan' ? 'selected' : ''}>Before (<)</option>
-                        <option value="lessThanOrEqual" ${rule.operator === 'lessThanOrEqual' ? 'selected' : ''}>On or Before (<=)</option>
-                        <option value="between" ${rule.operator === 'between' ? 'selected' : ''}>Between Dates</option>
-                     `;
-                     valInput = document.createElement('input');
-                     valInput.type = 'date';
-                 } else {
-                     // String operators
-                     opSelect.innerHTML = `
-                        <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
-                        <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Not Equals (!=)</option>
-                     `;
-                     valInput = document.createElement('input');
-                     valInput.type = 'text';
-                 }
-                 
-                valInput.className = 'qb-rule-input';
-                valInput.value = rule.value || '';
-                valInput.placeholder = isDateCol ? 'YYYY-MM-DD' : 'Value';
-                
-                // Add datalist for non-date string columns
-                if (!isDateCol) {
+                opSelect.innerHTML = `
+                    <option value="equals" ${rule.operator === 'equals' ? 'selected' : ''}>Equals (=)</option>
+                    <option value="notEquals" ${rule.operator === 'notEquals' ? 'selected' : ''}>Not Equals (!=)</option>
+                `;
+                valInput = document.createElement('input');
+                valInput.type = 'text';
+                // Add datalist for strings
+                if (rule.column) {
                     valInput.setAttribute('list', 'vals-' + rule.id);
-                    // Datalist for Autocomplete
-                    const dataList = document.createElement('datalist');
-                    dataList.id = 'vals-' + rule.id;
-                    ruleDiv.appendChild(dataList);
-                    
-                    // Fetch unique values for datalist
-                    if (rule.column) {
-                        fetchUniqueValues(rule.column, '', dataList);
-                    }
+                    const dl = document.createElement('datalist');
+                    dl.id = 'vals-' + rule.id;
+                    ruleDiv.appendChild(dl);
+                    fetchUniqueValues(rule.column, '', dl);
                 }
             }
 
-            ruleDiv.appendChild(colSelect);
+            valInput.className = 'qb-rule-input';
+            valInput.value = rule.value || '';
+            valInput.placeholder = isDateCol ? 'YYYY-MM-DD' : 'Value';
+
+            ruleDiv.appendChild(colInput);
             ruleDiv.appendChild(opSelect);
             ruleDiv.appendChild(valInput);
 
-            // Second value for 'between' (for both numeric and date columns)
-            const isDateCol = rule.column && (rule.column.toLowerCase().includes('date') || rule.column.toLowerCase().includes('time'));
+            // Handlers for Operator and Value
+            opSelect.addEventListener('change', (e) => {
+                rule.operator = e.target.value;
+                if (rule.operator === 'between') renderQueryBuilder(); // Re-render for 2nd input
+                checkSyncState();
+                updateIncompleteStatus();
+            });
+
+            if (valInput.tagName === 'INPUT' && valInput.getAttribute('list')) {
+                setupSearchableInput(valInput, (newVal) => {
+                    rule.value = newVal;
+                    checkSyncState();
+                    updateIncompleteStatus();
+                });
+            } else {
+                valInput.addEventListener('input', (e) => {
+                    rule.value = e.target.value;
+                    checkSyncState();
+                    updateIncompleteStatus();
+                });
+            }
+
+            // 4. Second value for 'between'
             if (rule.operator === 'between' && (isNumeric || isDateCol)) {
                 const spacer = document.createElement('span');
                 spacer.className = 'qb-rule-spacer';
@@ -1918,13 +1964,6 @@ def create_pivot_html(df,
                 ruleDiv.appendChild(spacer);
                 ruleDiv.appendChild(val2Input);
                 
-                val2Input.addEventListener('change', (e) => {
-                    rule.value2 = e.target.value;
-                    checkSyncState();
-                    updateIncompleteStatus();  // Update incomplete indicator
-                });
-                
-                // Also listen to 'input' for immediate feedback on date/text inputs
                 val2Input.addEventListener('input', (e) => {
                     rule.value2 = e.target.value;
                     checkSyncState();
@@ -1932,53 +1971,18 @@ def create_pivot_html(df,
                 });
             }
 
-            // Delete Button
+            // 5. Delete Button
             const delBtn = document.createElement('button');
             delBtn.className = 'qb-btn-delete';
             delBtn.textContent = '×';
-            delBtn.title = 'Delete this rule';
             delBtn.onclick = () => deleteNode(rule.id);
             ruleDiv.appendChild(delBtn);
             
-            // Check if rule is incomplete
             const updateIncompleteStatus = () => {
-                const isBetweenOp = rule.operator === 'between';
-                const needsSecondVal = (isNumeric || isDateCol) && isBetweenOp;
-                const isIncomplete = needsSecondVal && (rule.value === '' || rule.value2 === '');
+                const isIncomplete = rule.operator === 'between' && (rule.value === '' || rule.value2 === '');
                 ruleDiv.classList.toggle('incomplete', isIncomplete);
             };
             updateIncompleteStatus();
-
-            // Handlers
-            colSelect.addEventListener('change', (e) => {
-                rule.column = e.target.value;
-                // Reset operator based on new type
-                const newIsNumeric = allNumericCols.includes(rule.column);
-                rule.operator = newIsNumeric ? 'greaterThan' : 'equals';
-                rule.value = '';
-                renderQueryBuilder();
-                checkSyncState();
-            });
-            
-            opSelect.addEventListener('change', (e) => {
-                rule.operator = e.target.value;
-                if (rule.operator === 'between') renderQueryBuilder(); // Re-render for 2nd input
-                checkSyncState();
-                updateIncompleteStatus();
-            });
-            
-            valInput.addEventListener('change', (e) => {
-                rule.value = e.target.value;
-                checkSyncState();
-                updateIncompleteStatus();
-            });
-            
-            // Also listen to 'input' for immediate feedback on date/text inputs
-            valInput.addEventListener('input', (e) => {
-                rule.value = e.target.value;
-                checkSyncState();
-                updateIncompleteStatus();
-            });
 
             return ruleDiv;
         }
@@ -2025,6 +2029,50 @@ def create_pivot_html(df,
             fetchPivotData();
         };
 
+        /**
+         * Enhanced Searchable Select logic:
+         * Show all options on focus/click even if a value is present.
+         * Filter only when typing.
+         */
+        function setupSearchableInput(input, onValueChange) {
+            let lastValue = input.value;
+            let isClearingForFocus = false;
+
+            input.addEventListener('mousedown', () => {
+                if (input.value) {
+                    lastValue = input.value;
+                    isClearingForFocus = true;
+                    input.value = ''; // Temporarily clear to show all datalist options
+                }
+            });
+
+            input.addEventListener('focus', () => {
+                if (input.value && !isClearingForFocus) {
+                    lastValue = input.value;
+                    input.value = '';
+                }
+                isClearingForFocus = false;
+            });
+
+            input.addEventListener('input', (e) => {
+                const newVal = e.target.value;
+                // If the value matches one of the datalist options exactly, or if user is typing...
+                lastValue = newVal;
+                onValueChange(newVal);
+            });
+
+            input.addEventListener('blur', () => {
+                if (input.value === '' && lastValue !== '') {
+                    input.value = lastValue;
+                }
+                isClearingForFocus = false;
+            });
+            
+            // For opSelect and simple inputs
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') input.blur();
+            });
+        }
 
         function getColorForColumn(col) {
             let hash = 0;
