@@ -27,7 +27,7 @@ def create_pivot_html(df,
                       default_pivots=None, 
                       default_values=None,
                       formatting_dict=None,
-                      port=5001,
+                      port=5002,
                       debug=False):
     """
     Create an interactive HTML pivot table that fetches data from a Flask API.
@@ -360,8 +360,16 @@ def create_pivot_html(df,
             <div id="queryBuilderContainer" class="qb-container">
                 <!-- Recursive Query Builder Roots Here -->
             </div>
+            <div class="saved-views-row" style="display: flex; gap: 8px; margin-top: 10px; align-items: center;">
+                <select id="savedViewsSelect" class="qb-logic" style="flex: 1; max-width: 200px;">
+                    <option value="">-- Saved Views --</option>
+                </select>
+                <button class="qb-btn" onclick="loadSelectedView()" title="Load selected view">📂 Load</button>
+                <button class="qb-btn" onclick="promptSaveView()" title="Save current filters as a view">💾 Save</button>
+                <button class="qb-btn" onclick="deleteSelectedView()" title="Delete selected view" style="background: #dc3545;">🗑️ Delete</button>
+            </div>
             <div class="filters-helper" style="margin-top: 8px;">
-                <span>Build complex logic with Groups and Rules. Filters apply automatically when you Query Data.</span>
+                <span>Build complex logic with Groups and Rules. Save views for quick access.</span>
             </div>
         </div>
         
@@ -801,6 +809,24 @@ def create_pivot_html(df,
                     if (col === excludeCol) continue;
                     const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '(blank)';
                     if (!pivotFilters[col].has(val)) return false;
+                }
+                
+                // Numeric Column Filters (from grid column menu)
+                for (const col in numericFilters) {
+                    const filter = numericFilters[col];
+                    if (filter.operator === 'none') continue;
+                    
+                    const rowVal = parseFloat(row[col]);
+                    if (isNaN(rowVal)) return false;
+                    
+                    const v1 = parseFloat(filter.value1);
+                    const v2 = parseFloat(filter.value2);
+                    
+                    if (filter.operator === 'equals' && rowVal !== v1) return false;
+                    if (filter.operator === 'notEquals' && rowVal === v1) return false;
+                    if (filter.operator === 'greaterThan' && rowVal <= v1) return false;
+                    if (filter.operator === 'lessThan' && rowVal >= v1) return false;
+                    if (filter.operator === 'between' && (rowVal < v1 || rowVal > v2)) return false;
                 }
                 
                 // Global Filters (Recursive Tree)
@@ -2112,8 +2138,8 @@ def pivot_api():
             
             # Handle numeric conversion safely
             if (df[col].dtype.kind in 'bcifu'): # types: bool, complex, signed int, float, unsigned int
-                val1 = float(v1) if v1 != '' else 0
-                val2 = float(v2) if v2 != '' else 0
+                val1 = float(v1) if v1 is not None and v1 != '' else 0
+                val2 = float(v2) if v2 is not None and v2 != '' else 0
                 
                 if op == 'equals': return df[col] == val1
                 elif op == 'notEquals': return df[col] != val1
