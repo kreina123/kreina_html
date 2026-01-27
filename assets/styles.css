@@ -1,0 +1,649 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --primary-color: #3b82f6;
+    --primary-hover: #2563eb;
+    --primary-light: #dbeafe;
+    --bg-color: #f8fafc;
+    --card-bg: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --text-light: #94a3b8;
+    --border-color: #e2e8f0;
+    --border-light: #f1f5f9;
+    --success-color: #10b981;
+    --success-light: #d1fae5;
+    --danger-color: #ef4444;
+    --danger-light: #fee2e2;
+    --warning-color: #f59e0b;
+    --warning-light: #fef3c7;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    color: var(--text-main);
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* App Container */
+.app-container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 100vh;
+}
+
+/* App Header */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%);
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+}
+
+.app-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -0.025em;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.config-dropdown {
+    width: 180px;
+}
+
+/* Tabs - Reduced spacing */
+.main-tabs {
+    border-bottom: none !important;
+    margin-bottom: 0 !important;
+}
+
+.tab {
+    padding: 10px 20px !important;
+    border: none !important;
+    background: var(--card-bg) !important;
+    border-radius: var(--radius-md) var(--radius-md) 0 0 !important;
+    font-weight: 500 !important;
+    color: var(--text-muted) !important;
+    margin-right: 4px !important;
+    transition: all 0.2s !important;
+}
+
+.tab:hover {
+    color: var(--primary-color) !important;
+    background: var(--primary-light) !important;
+}
+
+.tab-selected {
+    background: var(--card-bg) !important;
+    color: var(--primary-color) !important;
+    border-bottom: 3px solid var(--primary-color) !important;
+    font-weight: 600 !important;
+}
+
+/* Tab Content - Reduced padding */
+.tab-content {
+    background: var(--card-bg);
+    border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md);
+    padding: 16px;
+    box-shadow: var(--shadow-md);
+    flex: 1;
+}
+
+/* Config Container - Reduced spacing */
+.config-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Section Styling - Reduced padding */
+.config-section {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    background: var(--bg-color);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.section-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.section-desc {
+    margin: 0 0 12px 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Logic Toggle */
+.logic-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.logic-radio {
+    display: flex;
+    gap: 12px;
+}
+
+.logic-radio label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+/* Filter Container */
+.filter-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.filter-rule {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: var(--card-bg);
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+.filter-input {
+    flex: 1;
+    padding: 5px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    min-width: 80px;
+}
+
+.filter-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+/* Buttons */
+.btn {
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+.btn-primary:disabled {
+    background: var(--text-light);
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: white;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+}
+
+.btn-secondary:hover {
+    background: var(--border-light);
+}
+
+.btn-danger {
+    background: white;
+    border: 1px solid var(--danger-color);
+    color: var(--danger-color);
+}
+
+.btn-danger:hover {
+    background: var(--danger-light);
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+}
+
+.btn-xs {
+    padding: 3px 8px;
+    font-size: 0.7rem;
+}
+
+.btn-icon {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    border-radius: 50%;
+}
+
+/* Pivot Config Cards - Reduced spacing */
+.pivot-configs-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pivot-config-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 12px;
+}
+
+.pivot-config-card:hover {
+    border-color: var(--primary-color);
+}
+
+.pivot-config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.pivot-title-input {
+    border: none;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-main);
+    background: transparent;
+    padding: 3px 6px;
+    border-radius: var(--radius-sm);
+    width: auto;
+    min-width: 180px;
+}
+
+.pivot-title-input:hover {
+    background: var(--border-light);
+}
+
+.pivot-title-input:focus {
+    outline: none;
+    background: var(--primary-light);
+}
+
+/* Pivot Settings - Reduced spacing */
+.pivot-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.setting-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.setting-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.setting-group-half {
+    flex: 0.5;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.setting-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+/* Pivot Filters Section */
+.pivot-filters-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-light);
+}
+
+.filters-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+/* Status Bar - Compact */
+.status-bar {
+    position: sticky;
+    bottom: 12px;
+    background: var(--card-bg);
+    padding: 10px 16px;
+    padding-right: 100px;
+    /* clear Dash DevTools icon */
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    z-index: 100;
+}
+
+.status-synced {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.status-pending {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.btn-apply {
+    min-width: 130px;
+    justify-content: center;
+}
+
+/* Pivots Container (Tab 2) - Reduced spacing */
+.pivots-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pivot-grid-wrapper {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 10px;
+    position: relative;
+}
+
+.pivot-grid-wrapper.stale {
+    opacity: 0.6;
+    filter: blur(1px);
+    pointer-events: none;
+}
+
+.pivot-grid-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.pivot-grid-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.pivot-grid-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.stale-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(245, 158, 11, 0.95);
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.85rem;
+    z-index: 1000;
+    box-shadow: var(--shadow-lg);
+    pointer-events: none;
+}
+
+/* Empty State (Pivot Tab) */
+.pivot-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    text-align: center;
+}
+
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.pivot-empty h3 {
+    margin: 0 0 6px 0;
+    font-size: 1.1rem;
+    color: var(--text-main);
+}
+
+.pivot-empty p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--card-bg);
+    padding: 20px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    min-width: 350px;
+}
+
+.modal-content h3 {
+    margin: 0 0 14px 0;
+    font-size: 1.1rem;
+}
+
+.modal-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+}
+
+.modal-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+/* Text Colors for Currency */
+.text-positive {
+    color: #15803d !important;
+    font-weight: 600;
+}
+
+.text-negative {
+    color: #b91c1c !important;
+    font-weight: 600;
+}
+
+/* AG Grid Customization - Compact */
+.ag-theme-alpine {
+    --ag-foreground-color: var(--text-main);
+    --ag-background-color: var(--card-bg);
+    --ag-header-background-color: #f8fafc;
+    --ag-row-hover-color: #f1f5f9;
+    --ag-selected-row-background-color: #e0f2fe;
+    --ag-range-selection-border-color: var(--primary-color);
+    --ag-header-column-separator-display: block;
+    --ag-header-column-separator-color: #e2e8f0;
+    --ag-row-height: 32px;
+    --ag-header-height: 36px;
+    font-family: 'Inter', sans-serif !important;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+/* Hide AG Grid Sidebar tools */
+.ag-side-bar,
+.ag-tool-panel-wrapper,
+.ag-side-buttons,
+.ag-pivot-mode-panel,
+.ag-column-select-header {
+    display: none !important;
+}
+
+.ag-header-cell-label {
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+/* Dash Dropdown Styling */
+.Select-control {
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: none !important;
+    min-height: 32px !important;
+}
+
+.Select-value,
+.Select-placeholder {
+    line-height: 30px !important;
+}
+
+.Select-input {
+    height: 30px !important;
+}
+
+.Select-menu-outer {
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: var(--shadow-md) !important;
+    z-index: 200 !important;
+}
+
+/* Keep dropdowns above status bar by opening upward for pivot filter dropdowns */
+.pivot-filters-section .Select-menu-outer,
+.filter-container .Select-menu-outer {
+    top: auto !important;
+    bottom: 100% !important;
+    margin-bottom: 2px !important;
+    margin-top: 0 !important;
+}
+
+.Select-option.is-focused {
+    background: var(--primary-light) !important;
+}
+
+.Select-option.is-selected {
+    background: var(--primary-color) !important;
+    color: white !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .setting-row {
+        flex-direction: column;
+    }
+
+    .setting-group-half {
+        flex: 1;
+    }
+
+    .filter-rule {
+        flex-wrap: wrap;
+    }
+
+    .app-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+}

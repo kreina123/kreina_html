@@ -1,0 +1,1319 @@
+# -*- coding: utf-8 -*-
+import dash
+from dash import html, dcc, Input, Output, State, ctx, ALL, no_update, callback_context
+import dash_ag_grid as dag
+import pandas as pd
+import json
+import os
+import random
+import uuid
+import io
+import base64
+import openpyxl
+
+# -------------------------------------------------------------------------
+# 1. Data Mocking
+# -------------------------------------------------------------------------
+categories = ["North", "South", "East", "West"]
+products = ["A", "B", "C", "D", "E", "F"]
+years = [2023, 2024, 2025]
+data = []
+for _ in range(1000):
+    data.append({
+        "Region": random.choice(categories),
+        "Product": random.choice(products),
+        "Year": random.choice(years),
+        "Sales": float(random.randint(5000, 50000)),
+        "PnL": float(random.randint(-2000, 15000)),
+        "Quantity": float(random.randint(10, 100)),
+        "IsActive": random.choice([True, False]),
+    })
+df = pd.DataFrame(data)
+
+# -------------------------------------------------------------------------
+# 2. Column Configuration (Formatting)
+# -------------------------------------------------------------------------
+COLUMN_CONFIG = {
+    "Sales": {"format": "currency", "decimals": 2, "agg": "sum"},
+    "PnL": {"format": "currency", "decimals": 2, "agg": "WeightedAvg", "weight": "Quantity"},
+    "Quantity": {"format": "numeric", "decimals": 0, "agg": "sum"},
+    "Year": {"format": "numeric", "decimals": 0, "useGrouping": False},
+    "IsActive": {"format": "boolean"},
+}
+
+# Default aggregation (removed from frontend)
+DEFAULT_AGGREGATION = "sum"
+
+# -------------------------------------------------------------------------
+# 3. Config & Helpers
+# -------------------------------------------------------------------------
+SAVED_CONFIGS_FILE = "saved_configs.json"
+AGG_OPTIONS = [
+    {"label": "Sum", "value": "sum"},
+    {"label": "Average", "value": "avg"},
+    {"label": "Min", "value": "min"},
+    {"label": "Max", "value": "max"},
+    {"label": "Median", "value": "Median"},
+    {"label": "Mode", "value": "Mode"},
+    {"label": "Std Dev", "value": "StdDev"},
+    {"label": "Weighted Avg", "value": "WeightedAvg"},
+]
+
+def load_configs():
+    if os.path.exists(SAVED_CONFIGS_FILE):
+        try:
+            with open(SAVED_CONFIGS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_configs_to_file(configs):
+    with open(SAVED_CONFIGS_FILE, 'w') as f:
+        json.dump(configs, f, indent=2)
+
+def get_default_pivot_config():
+    """Return a default pivot configuration"""
+    return {
+        "id": str(uuid.uuid4())[:8],
+        "title": "New Pivot",
+        "rows": ["Region"],
+        "cols": ["Year"],
+        "vals": ["Sales"],
+        "filters": []
+    }
+
+def get_column_filter_options(col_name, selected_val=None):
+    """Get filter options for a column. Returns options list for dropdown.
+    For columns with >100 unique values, returns fewer options but enables search."""
+    if col_name not in df.columns:
+        return []
+    
+    unique_vals = df[col_name].dropna().unique()
+    
+    # For boolean columns, always show True/False
+    if pd.api.types.is_bool_dtype(df[col_name].dtype):
+        return [{"label": "True", "value": "True"}, {"label": "False", "value": "False"}]
+    
+    # For numeric columns, don't prepopulate (user will type)
+    if pd.api.types.is_numeric_dtype(df[col_name].dtype):
+        return []
+    
+    # For categorical/string columns
+    if len(unique_vals) <= 100:
+        return [{"label": str(v), "value": str(v)} for v in sorted(unique_vals, key=str)]
+    else:
+        # Return first 50 sorted values, user can search for more
+        sorted_vals = sorted(unique_vals, key=str)[:50]
+        return [{"label": str(v), "value": str(v)} for v in sorted_vals]
+
+def create_filter_rule_component(index, pivot_id, filter_data=None):
+    """Create a filter rule component"""
+    selected_col = filter_data.get("col") if filter_data else None
+    selected_val = filter_data.get("val") if filter_data else ""
+    
+    # Get options for value dropdown based on selected column
+    val_options = get_column_filter_options(selected_col, selected_val) if selected_col else []
+    is_numeric = selected_col and selected_col in df.columns and pd.api.types.is_numeric_dtype(df[selected_col].dtype)
+    
+    # For numeric columns, use Input; for categorical, use Dropdown
+    if is_numeric or not val_options:
+        value_component = dcc.Input(
+            id={"type": "pivot-filter-val", "pivot": pivot_id, "index": index},
+            value=selected_val,
+            placeholder="Value",
+            debounce=True,
+            className="filter-input"
+        )
+    else:
+        value_component = dcc.Dropdown(
+            id={"type": "pivot-filter-val", "pivot": pivot_id, "index": index},
+            options=val_options,
+            value=selected_val if selected_val else None,
+            placeholder="Select value...",
+            searchable=True,
+            style={"width": "150px"}
+        )
+    
+    return html.Div(className="filter-rule", children=[
+        dcc.Dropdown(
+            id={"type": "pivot-filter-col", "pivot": pivot_id, "index": index},
+            options=[{"label": c, "value": c} for c in sorted(df.columns)],
+            value=selected_col,
+            placeholder="Column",
+            style={"width": "150px"}
+        ),
+        dcc.Dropdown(
+            id={"type": "pivot-filter-op", "pivot": pivot_id, "index": index},
+            options=[
+                {"label": "=", "value": "eq"},
+                {"label": "≠", "value": "ne"},
+                {"label": ">", "value": "gt"},
+                {"label": "<", "value": "lt"},
+                {"label": "Contains", "value": "contains"},
+            ],
+            value=filter_data.get("op", "eq") if filter_data else "eq",
+            style={"width": "100px"}
+        ),
+        value_component,
+        html.Button("×", id={"type": "pivot-filter-remove", "pivot": pivot_id, "index": index}, 
+                    className="btn btn-icon btn-danger")
+    ])
+
+def create_global_filter_component(index, filter_data=None):
+    """Create a global filter rule component"""
+    selected_col = filter_data.get("col") if filter_data else None
+    selected_val = filter_data.get("val") if filter_data else ""
+    
+    # Get options for value dropdown based on selected column
+    val_options = get_column_filter_options(selected_col, selected_val) if selected_col else []
+    is_numeric = selected_col and selected_col in df.columns and pd.api.types.is_numeric_dtype(df[selected_col].dtype)
+    
+    # For numeric columns, use Input; for categorical, use Dropdown
+    if is_numeric or not val_options:
+        value_component = dcc.Input(
+            id={"type": "global-filter-val", "index": index},
+            value=selected_val,
+            placeholder="Value",
+            debounce=True,
+            className="filter-input"
+        )
+    else:
+        value_component = dcc.Dropdown(
+            id={"type": "global-filter-val", "index": index},
+            options=val_options,
+            value=selected_val if selected_val else None,
+            placeholder="Select value...",
+            searchable=True,
+            style={"width": "150px"}
+        )
+    
+    return html.Div(className="filter-rule", children=[
+        dcc.Dropdown(
+            id={"type": "global-filter-col", "index": index},
+            options=[{"label": c, "value": c} for c in sorted(df.columns)],
+            value=selected_col,
+            placeholder="Column",
+            style={"width": "150px"}
+        ),
+        dcc.Dropdown(
+            id={"type": "global-filter-op", "index": index},
+            options=[
+                {"label": "=", "value": "eq"},
+                {"label": "≠", "value": "ne"},
+                {"label": ">", "value": "gt"},
+                {"label": "<", "value": "lt"},
+                {"label": "Contains", "value": "contains"},
+            ],
+            value=filter_data.get("op", "eq") if filter_data else "eq",
+            style={"width": "100px"}
+        ),
+        value_component,
+        html.Button("×", id={"type": "global-filter-remove", "index": index}, 
+                    className="btn btn-icon btn-danger")
+    ])
+
+def create_pivot_config_card(pivot_config, is_first=False):
+    """Create a pivot configuration card component"""
+    pivot_id = pivot_config["id"]
+    
+    # Create filter components for this pivot
+    filter_components = []
+    for i, f in enumerate(pivot_config.get("filters", [])):
+        filter_components.append(create_filter_rule_component(i, pivot_id, f))
+    
+    return html.Div(className="pivot-config-card", id={"type": "pivot-card", "id": pivot_id}, children=[
+        # Header with title and delete button
+        html.Div(className="pivot-config-header", children=[
+            dcc.Input(
+                id={"type": "pivot-title", "pivot": pivot_id},
+                value=pivot_config.get("title", "Untitled"),
+                className="pivot-title-input",
+                placeholder="Pivot Title"
+            ),
+            html.Button("×", id={"type": "delete-pivot", "pivot": pivot_id}, 
+                       className="btn btn-icon btn-danger", 
+                       style={"visibility": "hidden" if is_first else "visible"}),
+        ]),
+        
+        # Pivot Settings
+        html.Div(className="pivot-settings", children=[
+            html.Div(className="setting-row", children=[
+                html.Div(className="setting-group", children=[
+                    html.Label("Row Pivots", className="setting-label"),
+                    dcc.Dropdown(
+                        id={"type": "pivot-rows", "pivot": pivot_id},
+                        options=[{"label": c, "value": c} for c in sorted(df.columns) if COLUMN_CONFIG.get(c, {}).get("agg") is None],
+                        multi=True,
+                        value=pivot_config.get("rows", ["Region"])
+                    )
+                ]),
+                html.Div(className="setting-group", children=[
+                    html.Label("Column Pivots", className="setting-label"),
+                    dcc.Dropdown(
+                        id={"type": "pivot-cols", "pivot": pivot_id},
+                        options=[{"label": c, "value": c} for c in sorted(df.columns) if COLUMN_CONFIG.get(c, {}).get("agg") is None],
+                        multi=True,
+                        value=pivot_config.get("cols", ["Year"])
+                    )
+                ]),
+            ]),
+            
+            html.Div(className="setting-row", children=[
+                html.Div(className="setting-group", children=[
+                    html.Label("Values", className="setting-label"),
+                    dcc.Dropdown(
+                        id={"type": "pivot-vals", "pivot": pivot_id},
+                        options=[{"label": c, "value": c} for c in sorted(df.select_dtypes(include=['number']).columns)],
+                        multi=True,
+                        value=pivot_config.get("vals", ["Sales"])
+                    )
+                ]),
+            ]),
+        ]),
+        
+        # Individual Filters Section
+        html.Div(className="pivot-filters-section", children=[
+            html.Div(className="filters-header", children=[
+                html.Label("Individual Filters", className="setting-label"),
+                html.Button("+ Filter", id={"type": "add-pivot-filter", "pivot": pivot_id}, 
+                           className="btn btn-sm btn-secondary")
+            ]),
+            html.Div(id={"type": "pivot-filter-container", "pivot": pivot_id}, 
+                     className="filter-container", children=filter_components)
+        ])
+    ])
+
+# -------------------------------------------------------------------------
+# 3. App Init
+# -------------------------------------------------------------------------
+app = dash.Dash(__name__, use_pages=False, suppress_callback_exceptions=True)
+
+# -------------------------------------------------------------------------
+# 4. Layout
+# -------------------------------------------------------------------------
+app.layout = html.Div(className="app-container", children=[
+    # Header
+    html.Div(className="app-header", children=[
+        html.H1("📈 Agency MBS PnL Dashboard", className="app-title"),
+        html.Div(className="header-actions", children=[
+            dcc.Dropdown(
+                id="saved-configs-dd",
+                placeholder="Select Configuration...",
+                options=[{"label": k, "value": k} for k in load_configs().keys()],
+                className="config-dropdown"
+            ),
+            html.Button("🔄 Load", id="btn-load-config", className="btn btn-primary", style={"marginLeft": "5px"}),
+            html.Button("💾 Save", id="btn-save-config", className="btn btn-secondary", style={"marginLeft": "5px"}),
+            html.Button("🗑 Delete", id="btn-delete-config", className="btn btn-danger", style={"display": "none", "marginLeft": "5px"}),
+        ])
+    ]),
+    
+    # Save Modal
+    html.Div(id="save-modal", className="modal-overlay", style={"display": "none"}, children=[
+        html.Div(className="modal-content", children=[
+            html.H3("Save Configuration"),
+            dcc.Input(id="new-config-name", placeholder="Configuration name...", className="modal-input"),
+            html.Div(className="modal-buttons", children=[
+                html.Button("Save", id="btn-confirm-save", className="btn btn-primary"),
+                html.Button("Cancel", id="btn-cancel-save", className="btn btn-secondary"),
+            ])
+        ])
+    ]),
+    
+    # Tabs
+    dcc.Tabs(id="main-tabs", value="config-tab", className="main-tabs", children=[
+        dcc.Tab(label="⚙️ Configuration", value="config-tab", className="tab", selected_className="tab-selected"),
+        dcc.Tab(label="📊 Pivots", value="pivot-tab", className="tab", selected_className="tab-selected"),
+    ]),
+    
+    # Tab Content
+    html.Div(id="tab-content", className="tab-content"),
+    
+    # Status Bar (sticky at bottom)
+    html.Div(className="status-bar", children=[
+        html.Div(children=[
+            html.Span("Status: ", style={"fontWeight": "600"}),
+            html.Span("Ready", id="status-text", className="status-synced")
+        ]),
+        html.Button("APPLY CHANGES", id="btn-apply", className="btn btn-primary btn-apply", disabled=True)
+    ]),
+    
+    # Download component
+    dcc.Download(id="download-excel"),
+    
+    # Clipboard component
+    dcc.Clipboard(id="clipboard", style={"display": "none"}),
+    dcc.Store(id="store-clipboard-content", data=""),
+    
+    # Stores
+    dcc.Store(id="store-config", data=(
+        list(load_configs().values())[0] if load_configs() else {
+            "global_filters": [],
+            "global_logic": "and",
+            "pivots": [get_default_pivot_config()]
+        }
+    )),
+    dcc.Store(id="store-applied-config", data=(
+        list(load_configs().values())[0] if load_configs() else None
+    )),
+    dcc.Store(id="store-saved-configs", data=load_configs()),
+    dcc.Store(id="store-copy-alert", data=""),
+    dcc.Store(id="clientside-dummy", data=""),
+])
+
+# -------------------------------------------------------------------------
+# 4.5 Callbacks: Clientside
+# -------------------------------------------------------------------------
+# Alert callback
+app.clientside_callback(
+    """
+    function(data) {
+        if (data) {
+            window.alert(data);
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("clientside-dummy", "data"),
+    Input("store-copy-alert", "data"),
+    prevent_initial_call=True
+)
+
+# Clipboard copy callback - uses navigator.clipboard API
+app.clientside_callback(
+    """
+    function(content) {
+        if (content && content.length > 0) {
+            navigator.clipboard.writeText(content).then(function() {
+                console.log('Copied to clipboard successfully');
+            }).catch(function(err) {
+                console.error('Failed to copy to clipboard:', err);
+            });
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("clientside-dummy", "data", allow_duplicate=True),
+    Input("store-clipboard-content", "data"),
+    prevent_initial_call=True
+)
+
+# -------------------------------------------------------------------------
+# 5. Callbacks: Tab Content Rendering
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("tab-content", "children"),
+    Input("main-tabs", "value"),
+    Input("store-config", "data"),
+    Input("store-applied-config", "data"),
+)
+def render_tab_content(tab, config, applied_config):
+    if tab == "config-tab":
+        return render_config_tab(config)
+    else:
+        return render_pivot_tab(config, applied_config)
+
+def render_config_tab(config):
+    """Render the configuration tab"""
+    global_filters = config.get("global_filters", [])
+    global_logic = config.get("global_logic", "and")
+    pivots = config.get("pivots", [])
+    
+    # Create global filter components
+    global_filter_components = []
+    for i, f in enumerate(global_filters):
+        global_filter_components.append(create_global_filter_component(i, f))
+    
+    # Create pivot config cards
+    pivot_cards = []
+    for i, p in enumerate(pivots):
+        pivot_cards.append(create_pivot_config_card(p, is_first=(i == 0 and len(pivots) == 1)))
+    
+    return html.Div(className="config-container", children=[
+        # Global Filters Section
+        html.Div(className="config-section", children=[
+            html.Div(className="section-header", children=[
+                html.H3("🌍 Global Filters", className="section-title"),
+                html.Div(className="logic-toggle", children=[
+                    html.Label("Match: "),
+                    dcc.RadioItems(
+                        id="global-filter-logic",
+                        options=[
+                            {"label": "All (AND)", "value": "and"},
+                            {"label": "Any (OR)", "value": "or"}
+                        ],
+                        value=global_logic,
+                        inline=True,
+                        className="logic-radio"
+                    )
+                ])
+            ]),
+            html.P("These filters apply to all pivots below.", className="section-desc"),
+            html.Div(id="global-filter-container", className="filter-container", children=global_filter_components),
+            html.Button("+ Add Global Filter", id="btn-add-global-filter", className="btn btn-secondary btn-sm")
+        ]),
+        
+        # Pivot Configurations Section
+        html.Div(className="config-section", children=[
+            html.Div(className="section-header", children=[
+                html.H3("📊 Pivot Configurations", className="section-title"),
+                html.Button("+ Add Pivot", id="btn-add-pivot", className="btn btn-primary btn-sm")
+            ]),
+            html.P("Each configuration creates a separate pivot table.", className="section-desc"),
+            html.Div(id="pivot-configs-container", className="pivot-configs-container", children=pivot_cards)
+        ])
+    ])
+
+def render_pivot_tab(config, applied_config):
+    """Render the pivot tables tab"""
+    if not applied_config:
+        return html.Div(className="pivot-empty", children=[
+            html.Div(className="empty-icon", children="📊"),
+            html.H3("No Pivots Applied"),
+            html.P("Configure your pivots in the Configuration tab and click 'Apply Changes' to view them here."),
+        ])
+    
+    # Check if config has changed
+    is_stale = config != applied_config
+    
+    pivots = applied_config.get("pivots", [])
+    global_filters = applied_config.get("global_filters", [])
+    global_logic = applied_config.get("global_logic", "and")
+    
+    pivot_grids = []
+    for i, pivot_config in enumerate(pivots):
+        # Build column definitions and get data for this pivot
+        pivot_data = get_pivot_data(pivot_config, global_filters, global_logic)
+        col_defs = get_pivot_col_defs(pivot_config)
+        grid_opts = get_pivot_grid_opts(pivot_config)
+        
+        pivot_grids.append(
+            html.Div(
+                className="pivot-grid-wrapper stale" if is_stale else "pivot-grid-wrapper", 
+                children=[
+                    html.Div(className="pivot-grid-header", children=[
+                        html.H3(pivot_config.get("title", f"Pivot {i+1}"), className="pivot-grid-title"),
+                        html.Div(className="pivot-grid-actions", children=[
+                            html.Button("⊞ Expand", id={"type": "expand-all", "index": i}, className="btn btn-xs btn-secondary"),
+                            html.Button("⊟ Collapse", id={"type": "collapse-all", "index": i}, className="btn btn-xs btn-secondary"),
+                            html.Button("📋 Copy to Clipboard", id={"type": "copy-clipboard", "index": i}, className="btn btn-xs btn-secondary"),
+                        ])
+                    ]),
+                    html.Div(className="stale-overlay", children="⚠️ Configuration changed - Click Apply") if is_stale else None,
+                    dag.AgGrid(
+                        id={"type": "pivot-grid", "index": i},
+                        className="ag-theme-alpine",
+                        rowData=pivot_data,
+                        columnDefs=col_defs,
+                        defaultColDef={
+                            "flex": 1,
+                            "minWidth": 100,
+                            "sortable": True,
+                            "resizable": True,
+                            "filter": True,
+                            "suppressMenu": False,
+                            "menuTabs": ["filterMenuTab", "generalMenuTab", "columnsMenuTab"],
+                        },
+                        enableEnterpriseModules=True,
+                        dashGridOptions={
+                            "domLayout": "autoHeight",
+                            "animateRows": True,
+                            "pivotMode": True,
+                            "sideBar": True,  # Hide sidebar
+                            "groupDefaultExpanded": -1,
+                            "suppressMenuHide": True,
+                            "suppressColumnVirtualisation": True,
+                            **grid_opts
+                        },
+                        style={"width": "100%"},
+                    )
+                ]
+            )
+        )
+    
+    return html.Div(className="pivots-container", children=[
+        html.Div(style={"display": "flex", "justifyContent": "flex-end", "padding": "0 5px"}, children=[
+            html.Button("📥 Download All to Excel", id="btn-download-all", className="btn btn-primary")
+        ]),
+        html.Div(children=pivot_grids)
+    ])
+
+def compute_pivot_table(dff, pivot_config):
+    """Compute the pivoted dataframe using pandas to match the grid view"""
+    rows = pivot_config.get("rows", [])
+    cols = pivot_config.get("cols", [])
+    vals = pivot_config.get("vals", ["Sales"])
+    agg = pivot_config.get("agg", "sum")
+    weight_col = pivot_config.get("weight", "Quantity")
+    
+    if not rows and not cols:
+        return dff[vals]
+        
+    def weighted_avg(x):
+        try:
+            # We need to look up weights. This is tricky in simple aggfunc.
+            # Using a simplified approximation for now or fallback to mean if complexity is too high
+            # To do this correctly requires groupby().apply(), not switch map.
+            return x.mean() 
+        except:
+            return 0
+            
+    # Simple aggregations map
+    agg_funcs = {
+        "sum": "sum",
+        "avg": "mean",
+        "min": "min",
+        "max": "max",
+        "Median": "median",
+        "Mode": lambda x: x.mode()[0] if not x.mode().empty else None,
+        "StdDev": "std",
+        "WeightedAvg": "mean" # Fallback for now as persistent apply is complex without refactor
+    }
+    
+    # If WeightedAvg, we do a manual groupby apply
+    if agg == "WeightedAvg" and weight_col in dff.columns:
+        # Create a grouper
+        grouper = rows + cols
+        if not grouper:
+            return pd.DataFrame()
+            
+        def wavg_calc(group):
+            results = {}
+            w = group[weight_col]
+            if w.sum() == 0: return pd.Series({v: 0 for v in vals})
+            for v in vals:
+                results[v] = (group[v] * w).sum() / w.sum()
+            return pd.Series(results)
+            
+        return dff.groupby(grouper).apply(wavg_calc).unstack(level=cols) if cols else dff.groupby(grouper).apply(wavg_calc)
+    
+    # Standard Pivot
+    return pd.pivot_table(
+        dff, 
+        index=rows if rows else None, 
+        columns=cols if cols else None, 
+        values=vals, 
+        aggfunc=agg_funcs.get(agg, "sum")
+    )
+
+def get_pivot_data(pivot_config, global_filters, global_logic):
+    """Get filtered data for a pivot"""
+    dff = df.copy()
+    
+    # Apply global filters
+    dff = apply_filters(dff, global_filters, global_logic)
+    
+    # Apply individual pivot filters
+    pivot_filters = pivot_config.get("filters", [])
+    dff = apply_filters(dff, pivot_filters, "and")
+    
+    return dff.to_dict("records")
+
+def get_pivot_col_defs(pivot_config):
+    """Build column definitions for a pivot"""
+    rows = pivot_config.get("rows", []) or []
+    cols = pivot_config.get("cols", []) or []
+    vals = pivot_config.get("vals", []) or []
+    
+    # Helper to get filter type based on dtype
+    def get_filter_type(col_name):
+        if col_name not in df.columns:
+            return True
+        dtype = df[col_name].dtype
+        if pd.api.types.is_bool_dtype(dtype):
+            return "agSetColumnFilter"  # True/False set filter
+        if pd.api.types.is_numeric_dtype(dtype):
+            return "agNumberColumnFilter"
+        return "agSetColumnFilter"
+    
+    # Helper to build valueFormatter based on COLUMN_CONFIG
+    def get_value_formatter(col_name):
+        config = COLUMN_CONFIG.get(col_name, {})
+        fmt = config.get("format", "numeric")
+        decimals = config.get("decimals", 2)
+        
+        if fmt == "currency":
+            return {"function": f"params.value != null ? '$' + params.value.toLocaleString('en-US', {{minimumFractionDigits: {decimals}, maximumFractionDigits: {decimals}}}) : ''"}
+        elif fmt == "boolean":
+            return {"function": "params.value != null ? (params.value.toString().toLowerCase() === 'true' || params.value === true ? 'True' : 'False') : ''"}
+        elif fmt == "date":
+            pattern = config.get("pattern", "%Y-%m-%d")
+            # Convert Python date format to JS
+            return {"function": "params.value ? new Date(params.value).toLocaleDateString() : ''"}
+        else:  # numeric
+            use_grouping = config.get("useGrouping", True)
+            group_js = "true" if use_grouping else "false"
+            return {"function": f"params.value != null ? params.value.toLocaleString('en-US', {{useGrouping: {group_js}, minimumFractionDigits: {decimals}, maximumFractionDigits: {decimals}}}) : ''"}
+
+    col_defs = []
+    
+    # Row Groups - "multipleColumns" display type handles visibility
+    for c in rows:
+        col_defs.append({
+            "field": c, 
+            "rowGroup": True, 
+            "hide": True,  # Ag Grid handles showing this in separate col with groupDisplayType
+            "filter": get_filter_type(c),
+            "valueFormatter": get_value_formatter(c),
+            "cellDataType": False
+        })
+    
+    # Pivots (Column Pivots)
+    for c in cols:
+        # Determine the pivot comparator based on dtype
+        dtype = df[c].dtype if c in df.columns else None
+        if pd.api.types.is_numeric_dtype(dtype):
+            pivot_comparator = {"function": "(a, b) => a - b"}
+        elif pd.api.types.is_datetime64_any_dtype(dtype):
+            pivot_comparator = {"function": "(a, b) => new Date(a) - new Date(b)"}
+        else:
+            # String/categorical - alphabetical
+            pivot_comparator = {"function": "(a, b) => String(a).localeCompare(String(b))"}
+        
+        # The actual pivot column (must remain for pivoting to work)
+        col_defs.append({
+            "field": c, 
+            "pivot": True, 
+            "hide": True,
+            "filter": get_filter_type(c),
+            "pivotComparator": pivot_comparator,
+            "valueFormatter": get_value_formatter(c),
+            "cellDataType": False
+        })
+        
+        # The exposed filter column (Visible) - allows filtering on pivot column values
+        col_defs.append({
+            "colId": f"{c}_filter_col",
+            "headerName": c,
+            "field": c, 
+            "pivot": False, 
+            "hide": False, 
+            "filter": get_filter_type(c),
+            "suppressMenu": False,
+            "valueFormatter": get_value_formatter(c),
+            "cellDataType": False
+        })
+    
+    # Value columns
+    for c in vals:
+        col_config = COLUMN_CONFIG.get(c, {})
+        agg_func = col_config.get("agg", "sum")
+        
+        col_def = {
+            "field": c,
+            "headerName": c,
+            "type": "numericColumn",
+            "aggFunc": agg_func,
+            "valueFormatter": get_value_formatter(c),
+            "cellClassRules": {
+                "text-positive": "params.value >= 0",
+                "text-negative": "params.value < 0"
+            },
+            "filter": "agNumberColumnFilter"
+        }
+        
+        if agg_func == "WeightedAvg" and "weight" in col_config:
+            col_def["weightCol"] = col_config["weight"]
+            
+        col_defs.append(col_def)
+    
+    # Hidden columns (for filtering purposes)
+    used = set(rows + cols + vals)
+    for c in df.columns:
+        if c not in used:
+            col_defs.append({
+                "field": c, 
+                "hide": True,
+                "filter": get_filter_type(c)
+            })
+    
+    return col_defs
+
+
+def get_pivot_grid_opts(pivot_config):
+    """Build grid options for a pivot"""
+    return {
+        "pivotMode": True,
+        "animateRows": True,
+        "groupDefaultExpanded": -1,
+        "sideBar": True, # Enable Sidebar for filtering pivot columns
+        "groupDisplayType": "multipleColumns", # Split row groups into own columns
+        "suppressAggFuncInHeader": True,
+        "autoGroupColumnDef": {
+            "minWidth": 200,
+            "filter": True,
+            "suppressMenu": False,
+            "menuTabs": ["filterMenuTab", "generalMenuTab", "columnsMenuTab"],
+        },
+    }
+
+def apply_filters(dff, rules, logic):
+    """Apply filter rules to dataframe, ignoring empty/invalid filters"""
+    # Only use filters that have both column and value
+    valid_rules = [r for r in rules if r.get("col") and r.get("val") and str(r.get("val")).strip()]
+    if not valid_rules:
+        return dff
+    
+    masks = []
+    for r in valid_rules:
+        col, op, val = r["col"], r["op"], r["val"]
+        val_str = str(val).strip()
+        if not val_str:
+            continue
+            
+        val_list = [x.strip() for x in val_str.split(",")]
+        
+        try:
+            # Check if this is a boolean column
+            is_bool_col = col in dff.columns and pd.api.types.is_bool_dtype(dff[col].dtype)
+            
+            if op == "eq":
+                if is_bool_col:
+                    # Handle boolean comparison
+                    bool_val = val_str.lower() in ("true", "1", "yes")
+                    mask = dff[col] == bool_val
+                elif len(val_list) > 1:
+                    mask = dff[col].astype(str).isin(val_list)
+                else:
+                    try:
+                        target = float(val_str)
+                        mask = dff[col] == target
+                    except:
+                        mask = dff[col].astype(str) == val_str
+            elif op == "ne":
+                if is_bool_col:
+                    bool_val = val_str.lower() in ("true", "1", "yes")
+                    mask = dff[col] != bool_val
+                else:
+                    try:
+                        target = float(val_str)
+                        mask = dff[col] != target
+                    except:
+                        mask = dff[col].astype(str) != val_str
+            elif op == "gt":
+                mask = dff[col] > float(val_str)
+            elif op == "lt":
+                mask = dff[col] < float(val_str)
+            elif op == "contains":
+                mask = dff[col].astype(str).str.contains(val_str, case=False, na=False)
+            else:
+                continue
+            masks.append(mask)
+        except:
+            continue
+    
+    if masks:
+        final_mask = masks[0]
+        for m in masks[1:]:
+            if logic == "and":
+                final_mask = final_mask & m
+            else:
+                final_mask = final_mask | m
+        dff = dff[final_mask]
+    
+    return dff
+
+# -------------------------------------------------------------------------
+# 6. Callbacks: Global Filter Management
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("store-config", "data", allow_duplicate=True),
+    Input("btn-add-global-filter", "n_clicks"),
+    Input({"type": "global-filter-remove", "index": ALL}, "n_clicks"),
+    Input({"type": "global-filter-col", "index": ALL}, "value"),
+    Input({"type": "global-filter-op", "index": ALL}, "value"),
+    Input({"type": "global-filter-val", "index": ALL}, "value"),
+    Input("global-filter-logic", "value"),
+    State("store-config", "data"),
+    prevent_initial_call=True
+)
+def manage_global_filters(add_click, remove_clicks, cols, ops, vals, logic, config):
+    triggered_id = ctx.triggered_id
+    
+    if triggered_id == "btn-add-global-filter":
+        # Validate an actual click occurred
+        if add_click is None:
+            return no_update
+        config["global_filters"].append({"col": None, "op": "eq", "val": ""})
+        return config
+    
+    if triggered_id == "global-filter-logic":
+        config["global_logic"] = logic
+        return config
+    
+    if isinstance(triggered_id, dict):
+        if triggered_id.get("type") == "global-filter-remove":
+            # Validate an actual click occurred
+            if not any(c for c in remove_clicks if c is not None and c > 0):
+                return no_update
+            idx = triggered_id["index"]
+            if idx < len(config["global_filters"]):
+                config["global_filters"].pop(idx)
+            return config
+        
+        # Update filter values
+        if triggered_id.get("type") in ["global-filter-col", "global-filter-op", "global-filter-val"]:
+            new_filters = []
+            for i in range(len(cols)):
+                new_filters.append({
+                    "col": cols[i] if i < len(cols) else None,
+                    "op": ops[i] if i < len(ops) else "eq",
+                    "val": vals[i] if i < len(vals) else ""
+                })
+            config["global_filters"] = new_filters
+            return config
+    
+    return no_update
+
+# -------------------------------------------------------------------------
+# 7. Callbacks: Pivot Config Management
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("store-config", "data", allow_duplicate=True),
+    Input("btn-add-pivot", "n_clicks"),
+    Input({"type": "delete-pivot", "pivot": ALL}, "n_clicks"),
+    State("store-config", "data"),
+    prevent_initial_call=True
+)
+def manage_pivot_configs(add_click, delete_clicks, config):
+    triggered_id = ctx.triggered_id
+    
+    # Validate that an actual click happened (not just a re-render)
+    if triggered_id == "btn-add-pivot":
+        if add_click is None:
+            return no_update
+        config["pivots"].append(get_default_pivot_config())
+        return config
+    
+    if isinstance(triggered_id, dict) and triggered_id.get("type") == "delete-pivot":
+        # Check that an actual click occurred
+        if not any(c for c in delete_clicks if c is not None and c > 0):
+            return no_update
+        pivot_id = triggered_id["pivot"]
+        config["pivots"] = [p for p in config["pivots"] if p["id"] != pivot_id]
+        if len(config["pivots"]) == 0:
+            config["pivots"] = [get_default_pivot_config()]
+        return config
+    
+    return no_update
+
+# -------------------------------------------------------------------------
+# 8. Callbacks: Pivot Settings Updates
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("store-config", "data", allow_duplicate=True),
+    Input({"type": "pivot-title", "pivot": ALL}, "value"),
+    Input({"type": "pivot-rows", "pivot": ALL}, "value"),
+    Input({"type": "pivot-cols", "pivot": ALL}, "value"),
+    Input({"type": "pivot-vals", "pivot": ALL}, "value"),
+    State("store-config", "data"),
+    prevent_initial_call=True
+)
+def update_pivot_settings(titles, rows, cols, vals, config):
+    triggered_id = ctx.triggered_id
+    if not isinstance(triggered_id, dict):
+        return no_update
+    
+    pivot_id = triggered_id.get("pivot")
+    if not pivot_id:
+        return no_update
+    
+    # Find the pivot and update it
+    for i, p in enumerate(config["pivots"]):
+        if p["id"] == pivot_id:
+            pivot_indices = [p["id"] for p in config["pivots"]]
+            try:
+                idx = pivot_indices.index(pivot_id)
+                if idx < len(titles): p["title"] = titles[idx]
+                if idx < len(rows): p["rows"] = rows[idx] or []
+                if idx < len(cols): p["cols"] = cols[idx] or []
+                if idx < len(vals): p["vals"] = vals[idx] or []
+            except (ValueError, IndexError):
+                pass
+            break
+    
+    return config
+
+# -------------------------------------------------------------------------
+# 9. Callbacks: Pivot Filter Management  
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("store-config", "data", allow_duplicate=True),
+    Input({"type": "add-pivot-filter", "pivot": ALL}, "n_clicks"),
+    Input({"type": "pivot-filter-remove", "pivot": ALL, "index": ALL}, "n_clicks"),
+    Input({"type": "pivot-filter-col", "pivot": ALL, "index": ALL}, "value"),
+    Input({"type": "pivot-filter-op", "pivot": ALL, "index": ALL}, "value"),
+    Input({"type": "pivot-filter-val", "pivot": ALL, "index": ALL}, "value"),
+    State("store-config", "data"),
+    prevent_initial_call=True
+)
+def manage_pivot_filters(add_clicks, remove_clicks, cols, ops, vals, config):
+    triggered_id = ctx.triggered_id
+    
+    if isinstance(triggered_id, dict):
+        pivot_id = triggered_id.get("pivot")
+        trigger_type = triggered_id.get("type")
+        
+        if trigger_type == "add-pivot-filter":
+            # Validate an actual click occurred
+            if not any(c for c in add_clicks if c is not None and c > 0):
+                return no_update
+            for p in config["pivots"]:
+                if p["id"] == pivot_id:
+                    p["filters"].append({"col": None, "op": "eq", "val": ""})
+                    break
+            return config
+        
+        if trigger_type == "pivot-filter-remove":
+            # Validate an actual click occurred
+            if not any(c for c in remove_clicks if c is not None and c > 0):
+                return no_update
+            idx = triggered_id.get("index")
+            for p in config["pivots"]:
+                if p["id"] == pivot_id:
+                    if idx < len(p["filters"]):
+                        p["filters"].pop(idx)
+                    break
+            return config
+        
+        # Handle filter field updates (col, op, val)
+        if trigger_type in ["pivot-filter-col", "pivot-filter-op", "pivot-filter-val"]:
+            idx = triggered_id.get("index")
+            field_map = {
+                "pivot-filter-col": "col",
+                "pivot-filter-op": "op", 
+                "pivot-filter-val": "val"
+            }
+            field = field_map[trigger_type]
+            
+            # Get the value from the triggered input
+            # We need to find the correct value based on pivot_id and idx
+            triggered_prop = ctx.triggered[0]["value"] if ctx.triggered else None
+            
+            for p in config["pivots"]:
+                if p["id"] == pivot_id:
+                    if idx < len(p["filters"]):
+                        p["filters"][idx][field] = triggered_prop
+                    break
+            return config
+    
+    return no_update
+
+# -------------------------------------------------------------------------
+# 10. Callbacks: Apply Button State
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("btn-apply", "disabled"),
+    Output("btn-apply", "children"),
+    Output("status-text", "children"),
+    Output("status-text", "className"),
+    Input("store-config", "data"),
+    Input("store-applied-config", "data"),
+)
+def update_apply_button(config, applied):
+    if config == applied:
+        return True, "✓ Synced", "Synced", "status-synced"
+    else:
+        return False, "APPLY CHANGES", "Unsaved Changes", "status-pending"
+
+# -------------------------------------------------------------------------
+# 11. Callbacks: Apply Changes
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("store-applied-config", "data"),
+    Input("btn-apply", "n_clicks"),
+    State("store-config", "data"),
+    prevent_initial_call=True
+)
+def apply_changes(n, config):
+    return config
+
+# -------------------------------------------------------------------------
+# 12. Callbacks: Expand/Collapse All
+# -------------------------------------------------------------------------
+@app.callback(
+    Output({"type": "pivot-grid", "index": ALL}, "dashGridOptions"),
+    Input({"type": "expand-all", "index": ALL}, "n_clicks"),
+    Input({"type": "collapse-all", "index": ALL}, "n_clicks"),
+    State({"type": "pivot-grid", "index": ALL}, "dashGridOptions"),
+    State("store-applied-config", "data"),
+    prevent_initial_call=True
+)
+def handle_expand_collapse(expand_clicks, collapse_clicks, current_opts, applied_config):
+    triggered_id = ctx.triggered_id
+    if not isinstance(triggered_id, dict):
+        raise dash.exceptions.PreventUpdate
+    
+    if not applied_config:
+        raise dash.exceptions.PreventUpdate
+    
+    num_pivots = len(applied_config.get("pivots", []))
+    if num_pivots == 0:
+        raise dash.exceptions.PreventUpdate
+    
+    idx = triggered_id.get("index")
+    action = triggered_id.get("type")
+    
+    # Build output list with same length as current outputs
+    new_opts = []
+    for i in range(num_pivots):
+        opt = current_opts[i].copy() if i < len(current_opts) and current_opts[i] else {}
+        if i == idx:
+            if action == "expand-all":
+                opt["groupDefaultExpanded"] = -1
+                opt["pivotDefaultExpanded"] = True  # Expand column pivots
+            elif action == "collapse-all":
+                opt["groupDefaultExpanded"] = 0
+                opt["pivotDefaultExpanded"] = False  # Collapse column pivots
+        new_opts.append(opt)
+    
+    return new_opts
+
+
+
+# -------------------------------------------------------------------------
+# 14. Callbacks: Copy to Clipboard
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("store-clipboard-content", "data"),
+    Output("store-copy-alert", "data"),
+    Input({"type": "copy-clipboard", "index": ALL}, "n_clicks"),
+    State("store-applied-config", "data"),
+    prevent_initial_call=True
+)
+def copy_to_clipboard(n_clicks, applied_config):
+    triggered_id = ctx.triggered_id
+    if not isinstance(triggered_id, dict):
+        raise dash.exceptions.PreventUpdate
+    
+    if not any(n_clicks):
+        raise dash.exceptions.PreventUpdate
+    
+    idx = triggered_id.get("index")
+    if applied_config is None:
+        raise dash.exceptions.PreventUpdate
+    
+    pivots = applied_config.get("pivots", [])
+    if idx >= len(pivots):
+        raise dash.exceptions.PreventUpdate
+    
+    pivot_config = pivots[idx]
+    global_filters = applied_config.get("global_filters", [])
+    global_logic = applied_config.get("global_logic", "and")
+    
+    # Get filtered data
+    dff = df.copy()
+    dff = apply_filters(dff, global_filters, global_logic)
+    
+    # Apply local filters
+    pivot_filters = pivot_config.get("filters", [])
+    dff = apply_filters(dff, pivot_filters, "and")
+    
+    # Compute Pivoted Data with MultiIndex columns for multi-column pivots
+    try:
+        rows = pivot_config.get("rows", [])
+        cols = pivot_config.get("cols", [])
+        vals = pivot_config.get("vals", [])
+        agg = pivot_config.get("agg", DEFAULT_AGGREGATION)
+        
+        # If no grouping (raw data), just export raw
+        if not rows and not cols:
+            export_df = dff[vals] if vals else dff
+            tsv_data = export_df.to_csv(sep='\t', index=False)
+        else:
+            # Map agg func
+            agg_map = {
+                "sum": "sum",
+                "avg": "mean",
+                "min": "min",
+                "max": "max",
+                "Median": "median",
+                "Mode": lambda x: x.mode()[0] if not x.mode().empty else None,
+                "StdDev": "std",
+                "WeightedAvg": "mean"  # Fallback
+            }
+            
+            agg_dict = {}
+            for c in vals:
+                col_conf = COLUMN_CONFIG.get(c, {})
+                mode = col_conf.get("agg", "sum")
+                agg_dict[c] = agg_map.get(mode, "sum")
+            
+            pd_agg = agg_dict
+            
+            if cols:
+                # Use pivot_table to get proper MultiIndex columns
+                export_df = pd.pivot_table(
+                    dff, 
+                    index=rows if rows else None, 
+                    columns=cols, 
+                    values=vals, 
+                    aggfunc=pd_agg
+                )
+                # Flatten MultiIndex columns to "Col1|Col2|Value" format
+                if isinstance(export_df.columns, pd.MultiIndex):
+                    export_df.columns = ['|'.join(str(x) for x in col).strip('|') for col in export_df.columns.values]
+                export_df = export_df.reset_index()
+            else:
+                # Just groupby for rows only
+                export_df = dff.groupby(rows)[vals].agg(pd_agg).reset_index()
+            
+            tsv_data = export_df.to_csv(sep='\t', index=False)
+
+        timestamp = str(pd.Timestamp.now())
+        return tsv_data, f"Data copied to clipboard! ({timestamp})"
+    except Exception as e:
+        return "", f"Error: {str(e)}"
+
+@app.callback(
+    Output("download-excel", "data"),
+    Input("btn-download-all", "n_clicks"),
+    State("store-applied-config", "data"),
+    prevent_initial_call=True
+)
+def download_all_pivots(n_clicks, applied_config):
+    if not n_clicks or not applied_config:
+        raise dash.exceptions.PreventUpdate
+        
+    pivots = applied_config.get("pivots", [])
+    global_filters = applied_config.get("global_filters", [])
+    global_logic = applied_config.get("global_logic", "and")
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for i, pivot_config in enumerate(pivots):
+            # Get filtered data
+            dff = df.copy()
+            dff = apply_filters(dff, global_filters, global_logic)
+            pivot_filters = pivot_config.get("filters", [])
+            dff = apply_filters(dff, pivot_filters, "and")
+            
+            # Compute Pivoted Data with MultiIndex columns
+            try:
+                rows = pivot_config.get("rows", [])
+                cols = pivot_config.get("cols", [])
+                vals = pivot_config.get("vals", [])
+                agg = pivot_config.get("agg", DEFAULT_AGGREGATION)
+                
+                # If no grouping (raw data), just export raw
+                if not rows and not cols:
+                    export_df = dff[vals] if vals else dff
+                else:
+                    # Map agg func
+                    agg_map = {
+                        "sum": "sum",
+                        "avg": "mean",
+                        "min": "min",
+                        "max": "max",
+                        "Median": "median",
+                        "Mode": lambda x: x.mode()[0] if not x.mode().empty else None,
+                        "StdDev": "std",
+                        "WeightedAvg": "mean"  # Fallback
+                    }
+                    
+                    agg_dict = {}
+                    for c in vals:
+                        col_conf = COLUMN_CONFIG.get(c, {})
+                        mode = col_conf.get("agg", "sum")
+                        agg_dict[c] = agg_map.get(mode, "sum")
+                    
+                    pd_agg = agg_dict
+                    
+                    if cols:
+                        # Use pivot_table to get proper MultiIndex columns
+                        export_df = pd.pivot_table(
+                            dff, 
+                            index=rows if rows else None, 
+                            columns=cols, 
+                            values=vals, 
+                            aggfunc=pd_agg
+                        )
+                        # Flatten MultiIndex columns to "Col1|Col2|Value" format
+                        if isinstance(export_df.columns, pd.MultiIndex):
+                            export_df.columns = ['|'.join(str(x) for x in col).strip('|') for col in export_df.columns.values]
+                        export_df = export_df.reset_index()
+                    else:
+                        # Just groupby for rows only
+                        export_df = dff.groupby(rows)[vals].agg(pd_agg).reset_index()
+
+                sheet_name = pivot_config.get("title", f"Pivot {i+1}")
+                sheet_name = "".join(c for c in sheet_name if c.isalnum() or c in (' ', '_', '-'))[:30]
+                export_df.to_excel(writer, sheet_name=sheet_name or f"Pivot_{i+1}", index=False)
+            except:
+                continue
+                
+    output.seek(0)
+    return dcc.send_bytes(output.getvalue(), "dash_pivots.xlsx")
+
+# -------------------------------------------------------------------------
+# 15. Callbacks: Save/Load Configurations
+# -------------------------------------------------------------------------
+@app.callback(
+    Output("save-modal", "style"),
+    Input("btn-save-config", "n_clicks"),
+    Input("btn-cancel-save", "n_clicks"),
+    Input("btn-confirm-save", "n_clicks"),
+    prevent_initial_call=True
+)
+def toggle_save_modal(save_click, cancel_click, confirm_click):
+    triggered = ctx.triggered_id
+    if triggered == "btn-save-config":
+        return {"display": "flex"}
+    return {"display": "none"}
+
+@app.callback(
+    Output("store-saved-configs", "data"),
+    Output("new-config-name", "value"),
+    Input("btn-confirm-save", "n_clicks"),
+    Input("btn-delete-config", "n_clicks"),
+    State("new-config-name", "value"),
+    State("saved-configs-dd", "value"),
+    State("store-config", "data"),
+    State("store-saved-configs", "data"),
+    prevent_initial_call=True
+)
+def save_or_delete_config(save_click, delete_click, name, selected, current_config, saved_configs):
+    triggered = ctx.triggered_id
+    
+    if triggered == "btn-confirm-save" and name:
+        saved_configs[name] = current_config
+        save_configs_to_file(saved_configs)
+        return saved_configs, ""
+    
+    if triggered == "btn-delete-config" and selected:
+        if selected in saved_configs:
+            del saved_configs[selected]
+            save_configs_to_file(saved_configs)
+        return saved_configs, ""
+    
+    return no_update, no_update
+
+@app.callback(
+    Output("saved-configs-dd", "options"),
+    Output("btn-delete-config", "style"),
+    Input("store-saved-configs", "data"),
+    Input("saved-configs-dd", "value"),
+)
+def update_config_dropdown(saved_configs, selected):
+    options = [{"label": k, "value": k} for k in saved_configs.keys()]
+    delete_style = {"display": "block"} if selected else {"display": "none"}
+    return options, delete_style
+
+@app.callback(
+    Output("store-config", "data", allow_duplicate=True),
+    Input("btn-load-config", "n_clicks"),
+    State("saved-configs-dd", "value"),
+    State("store-saved-configs", "data"),
+    prevent_initial_call=True
+)
+def load_config(n_clicks, selected, saved_configs):
+    if n_clicks and selected and selected in saved_configs:
+        return saved_configs[selected]
+    return no_update
+
+# -------------------------------------------------------------------------
+# 15. Run
+# -------------------------------------------------------------------------
+if __name__ == "__main__":
+    app.run_server(debug=True, port=8054)
