@@ -59,6 +59,9 @@ body {
     padding: 12px 20px;
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
+    overflow: visible !important;
+    position: relative;
+    z-index: 2000;
 }
 
 .app-title {
@@ -73,6 +76,8 @@ body {
     display: flex;
     gap: 8px;
     align-items: center;
+    position: relative;
+    overflow: visible !important;
 }
 
 .config-dropdown {
@@ -181,29 +186,64 @@ body {
     margin-bottom: 10px;
 }
 
-.filter-rule {
+.filter-rule-row {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
+    margin-bottom: 6px;
     background: var(--card-bg);
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-light);
 }
 
-.filter-input {
-    flex: 1;
-    padding: 5px 8px;
+.filter-group {
+    border-left: 2px solid var(--border-color);
+    padding-left: 12px;
+    margin: 8px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.filter-input-small {
+    padding: 4px 8px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     font-size: 0.8rem;
-    min-width: 80px;
+    height: 32px;
 }
 
-.filter-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px var(--primary-light);
+.filter-dropdown-small {
+    font-size: 0.8rem;
+}
+
+.filter-dropdown-small .Select-control {
+    min-height: 32px !important;
+}
+
+.filter-dropdown-small .Select-value,
+.filter-dropdown-small .Select-placeholder {
+    line-height: 30px !important;
+}
+
+.logic-radio-small label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-right: 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.btn-icon-small {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    border-radius: 4px;
 }
 
 /* Buttons */
@@ -600,8 +640,17 @@ body {
 .Select-menu-outer {
     border-radius: var(--radius-sm) !important;
     border: 1px solid var(--border-color) !important;
-    box-shadow: var(--shadow-md) !important;
-    z-index: 200 !important;
+    box-shadow: var(--shadow-lg) !important;
+    z-index: 1000 !important;
+    background-color: white !important;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    position: relative;
+    z-index: 1001;
 }
 
 /* Keep dropdowns above status bar by opening upward for pivot filter dropdowns */
