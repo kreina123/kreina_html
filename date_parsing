@@ -1,0 +1,17 @@
+# Map Python strftime patterns to Intl.DateTimeFormat options
+DATE_FORMAT_MAP = {
+    "%Y/%m": {"year": "numeric", "month": "2-digit"}, # Results in 2025/01
+    "%Y-%m": {"year": "numeric", "month": "2-digit"}, # Results in 2025-01 (format varies by locale)
+    "%b %Y": {"year": "numeric", "month": "short"},   # Results in Jan 2025
+    "%Y-%m-%d": {"year": "numeric", "month": "2-digit", "day": "2-digit"},
+    "%m/%d/%Y": {"year": "numeric", "month": "numeric", "day": "numeric"},
+}
+
+elif fmt == "date":
+  pattern = config.get("pattern", "%Y-%m-%d")
+  # Get the options object, or default to full date if pattern unknown
+  date_opts = DATE_FORMAT_MAP.get(pattern, {"year": "numeric", "month": "2-digit", "day": "2-digit"})
+  
+  # Use 'en-GB' or similar to force the '/' separator if that's literally what you want,
+  # or leave as 'undefined' for user's local preference
+  return {"function": f"params.value ? new Date(params.value).toLocaleDateString('en-ZA', {json.dumps(date_opts)}) : ''"}
