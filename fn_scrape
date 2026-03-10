@@ -85,5 +85,17 @@ cookies = {
 
 r = requests.get(url, headers=headers, cookies=cookies)
 
+url = "https://freddiemac.mbs-securities.com/api/security/FRE/31296JBU9"
+
+headers = {
+    "accept": "*/*",
+    "referer": "https://freddiemac.mbs-securities.com/freddie/details/31296JBU9",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "x-csrf-token": "gc6YuykiguFeiiwQAtX5U1fTdsgTm7RqfxWzVjL43OLcBTnjufapjBkSu9Nz60pyZ_jNZDO1W_Ej_tVHHCTXZwea6NbrYwHS"
+}
+
+r = requests.get(url, headers=headers, cookies=session.cookies.get_dict())
+r
+
 print(r.status_code)
 print(r.json())
