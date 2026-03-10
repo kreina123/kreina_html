@@ -97,5 +97,37 @@ headers = {
 r = requests.get(url, headers=headers, cookies=session.cookies.get_dict())
 r
 
+### USE THIS ###
+
+import requests
+
+cusip = "31296JBU9"
+
+session = requests.Session()
+
+headers = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "*/*"
+}
+
+page = f"https://freddiemac.mbs-securities.com/freddie/details/{cusip}"
+api = f"https://freddiemac.mbs-securities.com/api/security/FRE/{cusip}"
+
+# initialize session cookies
+session.get(page, headers=headers)
+
+# API request
+api_headers = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "*/*",
+    "Referer": page,
+    "x-csrf-token": "1982"   # must exist but value not validated
+}
+
+r = session.get(api, headers=api_headers)
+
+print(r.status_code)
+print(r.json())
+
 print(r.status_code)
 print(r.json())
