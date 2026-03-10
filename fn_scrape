@@ -36,3 +36,30 @@ print(df.head())
 
 # Optional: export
 # df.to_csv("collateral_3140W1VA8.csv", index=False)
+
+import requests
+
+url = "https://fanniemae.mbs-securities.com/api/security/FNM/3140W1VA8"
+
+headers = {
+    "accept": "*/*",
+    "referer": "https://fanniemae.mbs-securities.com/fannie/details/3140W1VA8",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "x-csrf-token": "fCVEW1mc0Dl8jjg0-Msuimggxejss6wZ7-JYyYPjT25RxiP6GUQlbTuktg1RvQ1WzuYa6Q0Z6IqO0Jo0jNZgr-WCdl9jpxuZ"
+}
+
+cookies = {
+    "akaalb_prod_disc": "~op=prod_fnm_disc:PROD-FNM-DISC-DC1|~rv=59~m=PROD-FNM-DISC-DC1:0|~os=27b2095190f851e5e8e2e341eb0fa594~id=3ab8c1ea591ca8356cf6b6d309b92e0d",
+    "cssTCfannie": "valid",
+    "DISC_WEB_SSN_ID": "4E578044F2E4393E4F634BA395741089",
+    "AWSALB": "3B4BEma9Nmo9Ly4VyV+A/Lkz61eUiu4z1IoVutOxqjdIkTXGNZZUV+Fzivlrn7io8P2mXzlU8OrkAXvHOXDDnRXNBewfGdbs/72IwVOL3s23Mw95Cdi9PLQ5in1P",
+    "AWSALBCORS": "3B4BEma9Nmo9Ly4VyV+A/Lkz61eUiu4z1IoVutOxqjdIkTXGNZZUV+Fzivlrn7io8P2mXzlU8OrkAXvHOXDDnRXNBewfGdbs/72IwVOL3s23Mw95Cdi9PLQ5in1P"
+}
+
+r = requests.get(url, headers=headers, cookies=cookies)
+
+print(r.status_code)
+data = r.json()
+
+print(len(data))
+print(data.keys() if isinstance(data, dict) else type(data))
