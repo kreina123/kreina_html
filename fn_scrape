@@ -63,3 +63,27 @@ data = r.json()
 
 print(len(data))
 print(data.keys() if isinstance(data, dict) else type(data))
+
+import requests
+
+url = "https://freddiemac.mbs-securities.com/api/security/FRE/31296JBU9"
+
+headers = {
+    "accept": "*/*",
+    "referer": "https://freddiemac.mbs-securities.com/freddie/details/31296JBU9",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "x-csrf-token": "gc6YuykiguFeiiwQAtX5U1fTdsgTm7RqfxWzVjL43OLcBTnjufapjBkSu9Nz60pyZ_jNZDO1W_Ej_tVHHCTXZwea6NbrYwHS"
+}
+
+cookies = {
+    "DISC_WEB_SSN_ID": "F85CC11C2B551197F0B475329B6BD0AE",
+    "akaalb_prod_disc": "~op=prod_fre_disc:PROD-FRE-DISC-DC1|~rv=79~m=PROD-FRE-DISC-DC1:0|~os=b4a86569c6724cc64b2c5677f299b6ef~id=044621a4ec5a4b436ae3b601f73d035d",
+    "cssTCfreddie": "valid",
+    "AWSALB": "WQlcTYGDZGQKsi44Ww+TQISHS0BgP8QuZ9/rqxVK/YLDb+lqGJAxVgRw0ygb5BiLhq8Kwd190ym8QCjxJ0U3w9fv6t/EOOC6SxmFf9YYXQmOlmGDd7+er8uPLY7j",
+    "AWSALBCORS": "WQlcTYGDZGQKsi44Ww+TQISHS0BgP8QuZ9/rqxVK/YLDb+lqGJAxVgRw0ygb5BiLhq8Kwd190ym8QCjxJ0U3w9fv6t/EOOC6SxmFf9YYXQmOlmGDd7/OlmGDd7+er8uPLY7j"
+}
+
+r = requests.get(url, headers=headers, cookies=cookies)
+
+print(r.status_code)
+print(r.json())
