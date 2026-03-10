@@ -131,3 +131,43 @@ print(r.json())
 
 print(r.status_code)
 print(r.json())
+
+#Ginnie
+import requests
+
+session = requests.Session()
+
+# Step 1 — establish SharePoint session + cookies
+session.get(
+    "https://www.ginniemae.gov/investors/investor_search_tools/Pages/default.aspx"
+)
+
+url = "https://www.ginniemae.gov/_vti_bin/DisclosureService/Forwarder.aspx"
+
+headers = {
+    "accept": "application/json, */*; q=0.01",
+    "content-type": "application/json; charset=UTF-8",
+    "origin": "https://www.ginniemae.gov",
+    "referer": "https://www.ginniemae.gov/investors/investor_search_tools/Pages/default.aspx?searchId=SINGLECLASSFORMPANEL&cusip=3618N6CM7&idType=CUSIP&sid=3618N6CM7&resultType=MBS&pool=MB0975&poolIndicator=M",
+    "x-requested-with": "XMLHttpRequest",
+    "user-agent": "Mozilla/5.0"
+}
+
+payload = {
+    "dataRequest": {
+        "dsNm": "DISCL.GET_MBS_POOL.MBS_DELIQUENCIES",
+        "dsParams": [
+            {"name": "p_cusip_id", "type": "VARCHAR2", "value": "3618N6CM7"},
+            {"name": "p_pool_id", "type": "VARCHAR2", "value": "MB0975"},
+            {"name": "p_pool_indctr", "type": "VARCHAR2", "value": "M"},
+            {"name": "p_rc", "type": "CURSOR", "value": None},
+            {"name": "p_alert", "type": "VARCHAR2", "value": None}
+        ]
+    }
+}
+
+r = session.post(url, json=payload, headers=headers)
+
+print(r.status_code)
+data = r.json()
+print(data)
