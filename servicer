@@ -1,0 +1,530 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Optional
+import math
+import re
+
+# ── data contracts ────────────────────────────────────────────────────────────
+
+@dataclass
+class ServicerRow:
+    servicer:      Optional[str]   = None
+    collatyp:      Optional[str]   = None
+    balance:       Optional[float] = None
+    wac:           Optional[float] = None
+    wala:          Optional[float] = None
+    als:           Optional[float] = None
+    incentive_atm: Optional[float] = None
+    incentive_otm: Optional[float] = None
+
+@dataclass
+class PoolRow:
+    # ── pool-level ────────────────────────────────────────────────────────
+    coupon:      Optional[float] = None
+    wala:        Optional[float] = None
+    vintage:     Optional[int]   = None
+    spec_cohort: Optional[str]   = None   # e.g. "LB320", "NY", "LTV95"
+    # ── cusip fields ──────────────────────────────────────────────────────
+    identifier:           Optional[str]   = None
+    servicer_clean_1:     Optional[str]   = None
+    servicer_clean_2:     Optional[str]   = None
+    servicer_clean_3:     Optional[str]   = None
+    servicer_clean_4:     Optional[str]   = None
+    servicer_clean_5:     Optional[str]   = None
+    servicer_clean_pct_1: Optional[float] = None
+    servicer_clean_pct_2: Optional[float] = None
+    servicer_clean_pct_3: Optional[float] = None
+    servicer_clean_pct_4: Optional[float] = None
+    servicer_clean_pct_5: Optional[float] = None
+    vpr_ratio:            Optional[float] = None
+    incentive_value:      Optional[float] = None
+    # ── ranking rows ──────────────────────────────────────────────────────
+    ranking: list[ServicerRow] = field(default_factory=list)
+
+@dataclass
+class PoolSimilarityResult:
+    score:        Optional[float]
+    passed_gates: bool
+    gate_fail:    Optional[str]
+    components:   dict[str, Optional[float]]
+
+# ── spec cohort parsing ───────────────────────────────────────────────────────
+
+# Prefixes that indicate a balance-band spec cohort
+_BALANCE_PREFIXES = ("LB", "MB", "HB", "SB")   # extend as needed
+
+@dataclass
+class _ParsedCohort:
+    raw:          str
+    is_balance:   bool
+    prefix:       Optional[str]   = None   # e.g. "LB"
+    amount:       Optional[float] = None   # in dollars e.g. 320_000
+
+def _parse_cohort(label: Optional[str]) -> Optional[_ParsedCohort]:
+    """
+    Parse a spec_cohort label into a structured object.
+
+    Balance cohorts  : prefix + number  e.g. "LB320"  -> prefix="LB", amount=320_000
+                                             "LB85_5"  -> prefix="LB", amount=85_500
+    Non-balance specs: anything else    e.g. "NY", "LTV95", "INVESTOR"
+    Returns None if label is null/empty.
+    """
+    if not label:
+        return None
+    raw = label.strip().upper()
+
+    for prefix in _BALANCE_PREFIXES:
+        if raw.startswith(prefix):
+            remainder = raw[len(prefix):]
+            m = re.match(r"^(\d+(?:[_\.]\d+)?)$", remainder)
+            if m:
+                try:
+                    amount = float(m.group(1).replace("_", ".")) * 1_000
+                    return _ParsedCohort(raw=raw, is_balance=True,
+                                        prefix=prefix, amount=amount)
+                except ValueError:
+                    pass
+
+    return _ParsedCohort(raw=raw, is_balance=False)
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _safe(v) -> Optional[float]:
+    """Return float or None for any null-like / non-finite value."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else None
+    except (TypeError, ValueError):
+        return None
+
+def _norm_diff(a, b, scale: float) -> Optional[float]:
+    """1 - |a-b|/scale clipped to [0,1]. None if either input is missing."""
+    va, vb = _safe(a), _safe(b)
+    if va is None or vb is None:
+        return None
+    return max(0.0, 1.0 - abs(va - vb) / scale)
+
+def _bal_weighted_avg(rows: list[ServicerRow], attr: str) -> Optional[float]:
+    """
+    Balance-weighted mean of `attr` across ServicerRows.
+    Falls back to simple mean if all balances are null/zero.
+    Returns None if no valid values exist.
+    """
+    num = denom = 0.0
+    for r in rows:
+        b = _safe(r.balance) or 0.0
+        v = _safe(getattr(r, attr, None))
+        if v is not None:
+            num   += b * v
+            denom += b
+    if denom == 0:
+        vals = [
+            _safe(getattr(r, attr, None)) for r in rows
+            if _safe(getattr(r, attr, None)) is not None
+        ]
+        return sum(vals) / len(vals) if vals else None
+    return num / denom
+
+def _resolve_wala(p: PoolRow) -> Optional[float]:
+    """
+    Best available WALA for a pool:
+      1. PoolRow.wala if present
+      2. balance-weighted WALA from ranking table
+      3. None
+    Shared by both the gate check and the soft scorer.
+    """
+    v = _safe(p.wala)
+    if v is not None:
+        return v
+    return _bal_weighted_avg(p.ranking, "wala") if p.ranking else None
+
+# ── gate checks ───────────────────────────────────────────────────────────────
+
+class GateFail(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+def _check_coupon(a: PoolRow, b: PoolRow) -> None:
+    """Coupon must match exactly. Null on either side -> gate fails."""
+    ca, cb = _safe(a.coupon), _safe(b.coupon)
+    if ca is None or cb is None:
+        raise GateFail("coupon is null")
+    if ca != cb:
+        raise GateFail(f"coupon mismatch: {ca} vs {cb}")
+
+def _check_vintage(a: PoolRow, b: PoolRow) -> None:
+    """Vintage must be within +-1 year. Null -> gate fails."""
+    def _to_int(v) -> Optional[int]:
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    va, vb = _to_int(a.vintage), _to_int(b.vintage)
+    if va is None or vb is None:
+        raise GateFail("vintage is null")
+    if abs(va - vb) > 1:
+        raise GateFail(f"vintage too far apart: {va} vs {vb}")
+
+def _check_spec_cohort(a: PoolRow, b: PoolRow) -> None:
+    """
+    Spec cohort gate — two tiers depending on cohort type:
+
+    Non-balance specs (NY, LTV95, INVESTOR ...):
+      Must match exactly. Null -> gate fails.
+
+    Balance specs (LB320, MB150 ...):
+      1. Prefix must match (LB vs LB, not LB vs MB). Null -> gate fails.
+      2. Numeric amount must be within +-$50k. Null amount -> gate fails.
+    """
+    if not a.spec_cohort or not b.spec_cohort:
+        raise GateFail("spec_cohort is null")
+
+    pa = _parse_cohort(a.spec_cohort)
+    pb = _parse_cohort(b.spec_cohort)
+
+    if pa is None or pb is None:
+        raise GateFail("spec_cohort is null")
+
+    # cohort types must agree — can't compare a balance spec to a non-balance spec
+    if pa.is_balance != pb.is_balance:
+        raise GateFail(
+            f"spec_cohort type mismatch: {a.spec_cohort} vs {b.spec_cohort}"
+        )
+
+    if not pa.is_balance:
+        # non-balance: exact match
+        if pa.raw != pb.raw:
+            raise GateFail(
+                f"spec_cohort mismatch: {a.spec_cohort} vs {b.spec_cohort}"
+            )
+    else:
+        # balance: prefix must match
+        if pa.prefix != pb.prefix:
+            raise GateFail(
+                f"balance prefix mismatch: {a.spec_cohort} vs {b.spec_cohort}"
+            )
+        # numeric amount within +-$50k
+        if pa.amount is None or pb.amount is None:
+            raise GateFail(
+                f"balance cohort amount unparseable: "
+                f"{a.spec_cohort} vs {b.spec_cohort}"
+            )
+        if abs(pa.amount - pb.amount) > 50_000:
+            raise GateFail(
+                f"balance cohort too far apart: "
+                f"{a.spec_cohort} vs {b.spec_cohort} "
+                f"(${pa.amount:,.0f} vs ${pb.amount:,.0f})"
+            )
+
+def _check_wala(a: PoolRow, b: PoolRow) -> None:
+    """
+    WALA must be within +-15 months.
+    If WALA cannot be resolved for either pool, gate is skipped
+    (avoids penalising missing data).
+    """
+    wa, wb = _resolve_wala(a), _resolve_wala(b)
+    if wa is None or wb is None:
+        return
+    if abs(wa - wb) > 15:
+        raise GateFail(f"wala too far apart: {wa:.1f} vs {wb:.1f} months")
+
+# ── soft scorers ──────────────────────────────────────────────────────────────
+
+def _score_spec_cohort(a: PoolRow, b: PoolRow) -> Optional[float]:
+    """
+    Soft score for spec cohort — only meaningful for balance cohorts,
+    where it captures proximity within the +-$50k gate window.
+    Non-balance cohorts: gate already enforces exact match so score is 1.0.
+    Null or unparseable: returns None.
+    """
+    pa = _parse_cohort(a.spec_cohort)
+    pb = _parse_cohort(b.spec_cohort)
+    if pa is None or pb is None:
+        return None
+    if not pa.is_balance:
+        return 1.0   # exact match guaranteed by gate
+    if pa.amount is None or pb.amount is None:
+        return None
+    return _norm_diff(pa.amount, pb.amount, scale=50_000.0)
+
+def _score_wala(a: PoolRow, b: PoolRow) -> Optional[float]:
+    """
+    WALA similarity (scale = 15 months, matching the hard gate).
+    Gate ensures |diff| <= 15, so soft score rewards closeness within window.
+    """
+    return _norm_diff(_resolve_wala(a), _resolve_wala(b), scale=15.0)
+
+# ── servicer similarity internals ─────────────────────────────────────────────
+
+@dataclass
+class _ServicerEntry:
+    weight:    float
+    row:       ServicerRow
+    vpr:       Optional[float] = None
+    cusip_pct: Optional[float] = None
+
+def _build_weight_map(
+    ranking: list[ServicerRow],
+    pool:    PoolRow,
+) -> dict[str, _ServicerEntry]:
+    """
+    Build {servicer_name -> _ServicerEntry}.
+
+    Weight source priority:
+      1. servicer_clean_pct_i from PoolRow  (most direct)
+      2. balance from ServicerRow           (ranking table fallback)
+      3. equal weight                       (last resort)
+
+    Pct weights are only used if every ranked servicer has a non-null pct
+    and they sum to ~1 (0.80-1.05). Otherwise balance weights are used.
+
+    VPR: pool-level vpr_ratio is assigned to each servicer that appears
+    in the pool's servicer_clean_i slots. Servicers in the ranking but
+    absent from those slots get vpr=None (safely skipped downstream).
+    """
+    if not ranking:
+        return {}
+
+    cusip_pct: dict[str, Optional[float]] = {}
+    pool_vpr = _safe(pool.vpr_ratio)
+
+    for i in range(1, 6):
+        name = getattr(pool, f"servicer_clean_{i}", None)
+        pct  = _safe(getattr(pool, f"servicer_clean_pct_{i}", None))
+        if name:
+            cusip_pct[name] = pct
+
+    pct_total  = 0.0
+    pct_usable = True
+    for r in ranking:
+        if not r.servicer:
+            continue
+        p = cusip_pct.get(r.servicer)
+        if p is None:
+            pct_usable = False
+            break
+        pct_total += p
+    use_pct = pct_usable and 0.80 <= pct_total <= 1.05
+
+    if not use_pct:
+        tot_bal = sum((_safe(r.balance) or 0.0) for r in ranking)
+
+    n = max(sum(1 for r in ranking if r.servicer), 1)
+    result: dict[str, _ServicerEntry] = {}
+
+    for r in ranking:
+        if not r.servicer:
+            continue
+        if use_pct:
+            w = cusip_pct.get(r.servicer) or 0.0
+        else:
+            b = _safe(r.balance) or 0.0
+            w = (b / tot_bal) if tot_bal > 0 else (1.0 / n)
+        result[r.servicer] = _ServicerEntry(
+            weight    = w,
+            row       = r,
+            vpr       = pool_vpr if r.servicer in cusip_pct else None,
+            cusip_pct = cusip_pct.get(r.servicer),
+        )
+    return result
+
+def _score_servicer_overlap(
+    map_a: dict[str, _ServicerEntry],
+    map_b: dict[str, _ServicerEntry],
+) -> Optional[float]:
+    """
+    Histogram intersection of servicer weight distributions.
+
+    For each shared servicer takes min(weight_a, weight_b) — the fraction
+    of both pools jointly covered by that servicer. Summing across all
+    shared servicers gives a score in [0,1] where:
+      1.0 = identical servicer distribution
+      0.0 = no shared servicers at all
+
+    Examples:
+      A: {WF:0.9, PM:0.1}  B: {WF:0.9, PM:0.1}  -> 0.9+0.1 = 1.00
+      A: {WF:0.8, PM:0.2}  B: {WF:0.2, PM:0.8}  -> 0.2+0.2 = 0.40
+      A: {WF:1.0}          B: {PM:1.0}           -> 0.00
+    """
+    if not map_a or not map_b:
+        return None
+    shared = set(map_a) & set(map_b)
+    if not shared:
+        return 0.0
+    return sum(min(map_a[name].weight, map_b[name].weight) for name in shared)
+
+def _score_vpr(
+    map_a: dict[str, _ServicerEntry],
+    map_b: dict[str, _ServicerEntry],
+) -> Optional[float]:
+    """
+    Weighted VPR similarity across shared servicers.
+    Scale = 1.0 (VPR lives in ~[0.5, 2.0]).
+    """
+    if not map_a or not map_b:
+        return None
+    shared = set(map_a) & set(map_b)
+    num = denom = 0.0
+    for name in shared:
+        a, b = map_a[name], map_b[name]
+        if a.vpr is None or b.vpr is None:
+            continue
+        w_avg = (a.weight + b.weight) / 2.0
+        sim   = max(0.0, 1.0 - abs(a.vpr - b.vpr) / 1.0)
+        num   += sim * w_avg
+        denom += w_avg
+    return (num / denom) if denom > 0 else None
+
+def _score_servicer(a: PoolRow, b: PoolRow) -> Optional[float]:
+    """
+    Composite servicer similarity score [0,1].
+    Sub-components: overlap, VPR, incentive, WAC, WALA, ALS.
+    Null sub-components are dropped and weights redistributed.
+    """
+    map_a = _build_weight_map(a.ranking, a)
+    map_b = _build_weight_map(b.ranking, b)
+
+    sub: dict[str, Optional[float]] = {
+        "overlap":   _score_servicer_overlap(map_a, map_b),
+        "vpr":       _score_vpr(map_a, map_b),
+        "incentive": _norm_diff(_safe(a.incentive_value),
+                                _safe(b.incentive_value), 1.0),
+        "wac":       _norm_diff(_bal_weighted_avg(a.ranking, "wac"),
+                                _bal_weighted_avg(b.ranking, "wac"), 2.0),
+        "wala":      _norm_diff(_bal_weighted_avg(a.ranking, "wala"),
+                                _bal_weighted_avg(b.ranking, "wala"), 24.0),
+        "als":       _norm_diff(_bal_weighted_avg(a.ranking, "als"),
+                                _bal_weighted_avg(b.ranking, "als"), 150_000.0),
+    }
+    svc_weights = {
+        "overlap": 0.40, "vpr": 0.30, "incentive": 0.15,
+        "wac": 0.08, "wala": 0.04, "als": 0.03,
+    }
+    num = denom = 0.0
+    for k, w in svc_weights.items():
+        v = sub.get(k)
+        if v is not None:
+            num   += w * v
+            denom += w
+    return (num / denom) if denom > 0 else None
+
+# ── top-level pool similarity ─────────────────────────────────────────────────
+
+POOL_WEIGHTS: dict[str, float] = {
+    "servicer":    0.55,
+    "wala":        0.30,
+    "spec_cohort": 0.15,
+}
+
+def pool_similarity(
+    pool_a:  PoolRow,
+    pool_b:  PoolRow,
+    weights: dict[str, float] = POOL_WEIGHTS,
+) -> PoolSimilarityResult:
+    """
+    Compare two Agency MBS spec pools end-to-end.
+
+    Hard gates — score is 0.0 immediately if any fail:
+      - coupon must match exactly                         (null -> fail)
+      - vintage within +-1 year                           (null -> fail)
+      - spec_cohort:
+          non-balance (NY, LTV95 ...): exact match        (null -> fail)
+          balance (LB320, MB150 ...):
+            prefix must match (LB vs LB)                  (null -> fail)
+            numeric amount within +-$50k                  (null -> fail)
+      - WALA within +-15 months                           (null -> skipped)
+
+    Soft scores — weighted, null-safe (missing component drops out):
+      - servicer similarity  (weight 0.55)
+      - WALA similarity      (weight 0.30, scale 15 months)
+      - spec_cohort          (weight 0.15)
+                               balance specs: linear proximity within $50k window
+                               non-balance specs: 1.0 (exact match enforced by gate)
+
+    Returns PoolSimilarityResult with:
+      score        : float [0,1] or None if all soft components are missing
+      passed_gates : bool
+      gate_fail    : str reason if gates failed, else None
+      components   : per-component soft scores (None = dropped)
+    """
+    for check in [_check_coupon, _check_vintage, _check_spec_cohort, _check_wala]:
+        try:
+            check(pool_a, pool_b)
+        except GateFail as e:
+            return PoolSimilarityResult(
+                score=0.0, passed_gates=False,
+                gate_fail=e.reason, components={},
+            )
+
+    components: dict[str, Optional[float]] = {
+        "servicer":    _score_servicer(pool_a, pool_b),
+        "wala":        _score_wala(pool_a, pool_b),
+        "spec_cohort": _score_spec_cohort(pool_a, pool_b),
+    }
+
+    num = denom = 0.0
+    for key, w in weights.items():
+        v = components.get(key)
+        if v is not None:
+            num   += w * v
+            denom += w
+
+    return PoolSimilarityResult(
+        score         = (num / denom) if denom > 0 else None,
+        passed_gates  = True,
+        gate_fail     = None,
+        components    = components,
+    )
+
+# ── DataFrame constructors ────────────────────────────────────────────────────
+
+def build_ranking_rows(df_ranking) -> list[ServicerRow]:
+    """
+    Build a list of ServicerRow from a filtered ranking DataFrame.
+    Any column not present is silently defaulted to None.
+    """
+    rows = []
+    for _, r in df_ranking.iterrows():
+        rows.append(ServicerRow(
+            servicer      = r.get("servicer"),
+            collatyp      = r.get("collatyp"),
+            balance       = r.get("balance"),
+            wac           = r.get("wac"),
+            wala          = r.get("wala"),
+            als           = r.get("als"),
+            incentive_atm = r.get("incentive_atm"),
+            incentive_otm = r.get("incentive_otm"),
+        ))
+    return rows
+
+def build_pool_row(cusip_row, df_ranking) -> PoolRow:
+    """
+    Build a PoolRow from a single cusip/pool Series and a pre-filtered
+    ranking DataFrame (already filtered to that cusip's identifier).
+    Missing columns are silently defaulted to None.
+    """
+    def g(key):
+        try:
+            v = cusip_row.get(key) if hasattr(cusip_row, "get") else cusip_row[key]
+            return None if (v is not None and isinstance(v, float)
+                            and math.isnan(v)) else v
+        except (KeyError, IndexError):
+            return None
+
+    return PoolRow(
+        coupon          = g("coupon"),
+        wala            = g("wala"),
+        vintage         = g("vintage"),
+        spec_cohort     = g("spec_cohort"),
+        identifier      = g("identifier"),
+        **{f"servicer_clean_{i}":     g(f"servicer_clean_{i}")     for i in range(1, 6)},
+        **{f"servicer_clean_pct_{i}": g(f"servicer_clean_pct_{i}") for i in range(1, 6)},
+        vpr_ratio       = g("vpr_ratio"),
+        incentive_value = g("incentive_value"),
+        ranking         = build_ranking_rows(df_ranking),
+    )
