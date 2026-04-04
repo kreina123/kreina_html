@@ -1,0 +1,269 @@
+# =========================
+# 1. Imports
+# =========================
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+import matplotlib.dates as mdates
+
+np.random.seed(42)
+
+# =========================
+# 2. Generate Example Data
+# =========================
+n_dates = 200
+n_sec   = 300
+
+dates = pd.date_range("2022-01-01", periods=n_dates, freq="B")
+securities = [f"SEC_{i}" for i in range(n_sec)]
+
+df = pd.MultiIndex.from_product(
+    [dates, securities],
+    names=["date", "security"]
+).to_frame(index=False)
+
+df["dealer_payup"] = np.random.normal(0.0, 0.3, len(df))
+df["jpm_payup"] = df["dealer_payup"] + np.random.normal(-5, 5, len(df))
+df["port_payup"] = df["dealer_payup"] + np.random.normal(-0.1, 0.7, len(df))
+
+# =========================
+# 3. Absolute pay_up_deviation
+# =========================
+df["jpm_pay_up_deviation"]  = (df["jpm_payup"]  - df["dealer_payup"]).abs()
+df["port_pay_up_deviation"] = (df["port_payup"] - df["dealer_payup"]).abs()
+
+# =========================
+# 4. Win Scoring
+# =========================
+df["jpm_wins"] = (df["jpm_pay_up_deviation"] < df["port_pay_up_deviation"]).astype(int)
+df["port_wins"] = (df["port_pay_up_deviation"] < df["jpm_pay_up_deviation"]).astype(int)
+
+jpm_score = df["jpm_wins"].mean()
+port_score = df["port_wins"].mean()
+
+# =========================
+# 5. Histogram (with scores in legend)
+# =========================
+plt.figure(figsize=(10,6))
+
+plt.hist(
+    df["jpm_pay_up_deviation"],
+    bins=100,
+    alpha=0.5,
+    density=True,
+    label=f"JPM (win rate: {jpm_score:.2%})"
+)
+
+plt.hist(
+    df["port_pay_up_deviation"],
+    bins=100,
+    alpha=0.5,
+    density=True,
+    label=f"Port (win rate: {port_score:.2%})"
+)
+
+plt.legend()
+plt.xlabel("Absolute Pay-up Deviation")
+plt.ylabel("Density")
+plt.title("Distribution of Pay-up Deviations")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 6. KDE
+# =========================
+x = np.linspace(
+    min(df["jpm_pay_up_deviation"].min(), df["port_pay_up_deviation"].min()),
+    max(df["jpm_pay_up_deviation"].max(), df["port_pay_up_deviation"].max()),
+    500
+)
+
+kde_jpm  = gaussian_kde(df["jpm_pay_up_deviation"])
+kde_port = gaussian_kde(df["port_pay_up_deviation"])
+
+plt.figure(figsize=(10,6))
+plt.plot(x, kde_jpm(x), label="JPM vs Dealer")
+plt.plot(x, kde_port(x), label="Port vs Dealer")
+plt.legend()
+plt.title("Smoothed Distribution of Pay-up Deviations")
+plt.xlabel("Absolute Pay-up Deviation")
+plt.ylabel("Density")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 7. Daily Aggregation
+# =========================
+daily = df.groupby("date")[["jpm_pay_up_deviation", "port_pay_up_deviation"]].mean()
+
+plt.figure(figsize=(10,6))
+plt.hist(daily["jpm_pay_up_deviation"], bins=50, alpha=0.5, density=True, label="JPM (daily avg)")
+plt.hist(daily["port_pay_up_deviation"], bins=50, alpha=0.5, density=True, label="Port (daily avg)")
+plt.legend()
+plt.title("Distribution of Daily Average Pay-up Deviations")
+plt.xlabel("Absolute Pay-up Deviation")
+plt.ylabel("Density")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 8. Scatter
+# =========================
+plt.figure(figsize=(10,6))
+sample = df.sample(20000)
+plt.scatter(sample["jpm_pay_up_deviation"], sample["port_pay_up_deviation"], alpha=0.3)
+plt.xlabel("JPM Absolute Deviation")
+plt.ylabel("Port Absolute Deviation")
+plt.title("Pay-up Deviation Comparison")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 9. Daily Scores
+# =========================
+daily_scores = df.groupby("date")[["jpm_wins", "port_wins"]].mean()
+
+# =========================
+# 10. Daily Win Rate Plot
+# =========================
+plt.figure(figsize=(12,6))
+
+plt.plot(daily_scores.index, daily_scores["jpm_wins"], label="JPM Win Rate")
+plt.plot(daily_scores.index, daily_scores["port_wins"], label="Port Win Rate")
+
+plt.title("Daily Win Rate (Closer to Dealer)")
+plt.xlabel("Date")
+plt.ylabel("Win Rate")
+
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+plt.xticks(rotation=45)
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 11. Rolling (5-day)
+# =========================
+rolling = daily_scores.rolling(5).mean()
+
+plt.figure(figsize=(12,6))
+
+plt.plot(rolling.index, rolling["jpm_wins"], label="JPM (5d)")
+plt.plot(rolling.index, rolling["port_wins"], label="Port (5d)")
+
+plt.title("Rolling Win Rate (5 Days)")
+plt.xlabel("Date")
+plt.ylabel("Win Rate")
+
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+plt.xticks(rotation=45)
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 12. Win Strength
+# =========================
+df["win_strength"] = df["port_pay_up_deviation"] - df["jpm_pay_up_deviation"]
+daily_strength = df.groupby("date")["win_strength"].mean()
+
+plt.figure(figsize=(12,6))
+plt.plot(daily_strength.index, daily_strength)
+
+plt.title("Daily Win Strength (JPM positive)")
+plt.xlabel("Date")
+plt.ylabel("Deviation Advantage")
+
+plt.axhline(0)
+
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+plt.xticks(rotation=45)
+
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 13. Mean & Median Daily Error
+# =========================
+daily_error_mean = df.groupby("date")[[
+    "jpm_pay_up_deviation",
+    "port_pay_up_deviation"
+]].mean()
+
+daily_error_median = df.groupby("date")[[
+    "jpm_pay_up_deviation",
+    "port_pay_up_deviation"
+]].median()
+
+# =========================
+# 14. Plot Mean Daily Error
+# =========================
+plt.figure(figsize=(12,6))
+
+plt.plot(
+    daily_error_mean.index,
+    daily_error_mean["jpm_pay_up_deviation"],
+    label="JPM Mean Error"
+)
+
+plt.plot(
+    daily_error_mean.index,
+    daily_error_mean["port_pay_up_deviation"],
+    label="Port Mean Error"
+)
+
+plt.title("Mean Daily Pay-up Deviation (Error)")
+plt.xlabel("Date")
+plt.ylabel("Mean Absolute Deviation")
+
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+plt.xticks(rotation=45)
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# =========================
+# 15. Plot Median Daily Error
+# =========================
+plt.figure(figsize=(12,6))
+
+plt.plot(
+    daily_error_median.index,
+    daily_error_median["jpm_pay_up_deviation"],
+    label="JPM Median Error"
+)
+
+plt.plot(
+    daily_error_median.index,
+    daily_error_median["port_pay_up_deviation"],
+    label="Port Median Error"
+)
+
+plt.title("Median Daily Pay-up Deviation (Error)")
+plt.xlabel("Date")
+plt.ylabel("Median Absolute Deviation")
+
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+plt.xticks(rotation=45)
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
